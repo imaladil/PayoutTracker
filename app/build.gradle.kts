@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.payouttracker"
         minSdk = 24
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
     }
 
     // The signing key is NOT stored in the repository. GitHub Actions restores it from
