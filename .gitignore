@@ -1,0 +1,14 @@
+# Signing key: never commit it. GitHub gets it from repository secrets (see setup.sh).
+*.jks
+*.keystore
+keystore.properties
+
+# Build output and local files
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
