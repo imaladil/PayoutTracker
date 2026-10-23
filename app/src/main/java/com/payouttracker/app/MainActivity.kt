@@ -1,4 +1,4 @@
-package com.example.payouttracker
+package com.payouttracker.app
 
 import android.os.Bundle
 import android.os.SystemClock

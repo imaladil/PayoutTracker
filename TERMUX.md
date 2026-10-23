@@ -35,13 +35,19 @@ updated, only reinstalled.
 
 ## App Update inside the app
 
-The **App Update** button checks the latest GitHub Release of `imaladil/PayoutTracker`, downloads
-its APK and opens Android's installer (you tap Install). For this to work:
+The **App Update** button checks the latest GitHub Release of `imaladil/PayoutTracker`. If a newer
+version exists, **Download** opens the APK link in your browser; open the downloaded file from the
+notification and tap Install. The app itself only has the INTERNET permission (it never installs
+anything on its own, which keeps Play Protect quiet). For this to work:
 
 - the repository must be **public** (the app reads releases without a login),
-- at least one release must exist: run `bash release.sh`,
-- the first time, Android asks you to allow Payout Tracker to install apps.
+- at least one release must exist: run `bash release.sh`.
 
 Every update must come from `release.sh` (it raises the version number), and every build is
 signed with the same key from the GitHub secrets, so it installs over the old app and keeps
 your data.
+
+## Moving from the old `com.example.payouttracker` build
+
+Version 1.3 uses the package name `com.payouttracker.app`, so Android treats it as a new app.
+Install it, then uninstall the old Payout Tracker. Data from the old app is not carried over.

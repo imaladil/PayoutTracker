@@ -26,6 +26,9 @@ main() {
       exit 1
     fi
     echo "Using: $ZIP"
+    FILE="app/build.gradle.kts"
+    KEEP_CODE="$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' "$FILE" | head -1)"
+    KEEP_NAME="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' "$FILE" | head -1)"
     TMP="$(mktemp -d)"
     unzip -q "$ZIP" -d "$TMP"
     SRC="$TMP/PayoutTracker"
@@ -45,7 +48,12 @@ main() {
     done
     # 2) copy the new version in
     cp -a "$SRC"/. "$DIR"/
-    # 3) tidy up folders that became empty
+    # 3) keep the version numbers of this folder, so release.sh always continues from them
+    if [ -n "$KEEP_CODE" ] && [ -n "$KEEP_NAME" ]; then
+      sed -i "s/versionCode = [0-9]*/versionCode = $KEEP_CODE/" "$FILE"
+      sed -i "s/versionName = \"[^\"]*\"/versionName = \"$KEEP_NAME\"/" "$FILE"
+    fi
+    # 4) tidy up folders that became empty
     find "$DIR" -type d -empty -not -path "$DIR/.git/*" -not -path "$DIR" -delete 2>/dev/null || true
     rm -rf "$TMP"
     [ -n "$2" ] && MSG="$2"

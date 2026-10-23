@@ -1,4 +1,4 @@
-package com.example.payouttracker
+package com.payouttracker.app
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background

@@ -6,15 +6,15 @@ plugins {
 val canSign = file("release.jks").exists() && System.getenv("KEYSTORE_PASSWORD") != null
 
 android {
-    namespace = "com.example.payouttracker"
+    namespace = "com.payouttracker.app"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.payouttracker"
-        minSdk = 24
+        applicationId = "com.payouttracker.app"
+        minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
     }
 
     // The signing key is NOT stored in the repository. GitHub Actions restores it from

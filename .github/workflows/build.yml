@@ -44,6 +44,14 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: gradle assembleRelease
 
+      - name: Build plain debug APK (for comparison)
+        run: gradle assembleDebug
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: PayoutTracker-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+
       - name: Name the APK
         run: cp app/build/outputs/apk/release/app-release.apk "PayoutTracker-${GITHUB_REF_NAME//\//-}.apk"
 

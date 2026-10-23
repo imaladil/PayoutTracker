@@ -1,10 +1,8 @@
-package com.example.payouttracker
+package com.payouttracker.app
 
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -24,13 +22,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.FileProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -51,16 +47,13 @@ sealed class UpdateState {
     object Checking : UpdateState()
     object UpToDate : UpdateState()
     data class Available(val info: ReleaseInfo) : UpdateState()
-    data class Downloading(val info: ReleaseInfo, val done: Long, val total: Long) : UpdateState()
-    data class Ready(val info: ReleaseInfo, val file: File) : UpdateState()
     data class Failed(val message: String) : UpdateState()
 }
 
-private class DownloadCancelled : Exception()
-
 /**
- * Checks GitHub for a newer release, downloads its APK and hands it to Android's installer.
- * Android always asks the user to confirm the installation, so it can never happen silently.
+ * Looks for a newer release on GitHub and hands the APK link to the browser, which downloads it.
+ * The app itself needs only the INTERNET permission: it never installs anything on its own, so
+ * you open the downloaded file and confirm the installation yourself.
  */
 class UpdateController(private val ctx: Context, private val scope: CoroutineScope) {
 
@@ -71,25 +64,20 @@ class UpdateController(private val ctx: Context, private val scope: CoroutineSco
     var newVersion by mutableStateOf<String?>(null)
         private set
 
-    private var cancelled = false
-
     val currentVersion: String = try {
         ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "0"
     } catch (e: Exception) {
         "0"
     }
 
-    /** Called when the update dialog opens: keep a running download, otherwise look for a new release. */
+    /** Called when the update dialog opens. */
     fun onOpen() {
-        when (state) {
-            is UpdateState.Downloading, is UpdateState.Ready -> Unit
-            else -> check(silent = false)
-        }
+        check(silent = false)
     }
 
     /** [silent] checks only record [newVersion] and never change the dialog state. */
     fun check(silent: Boolean) {
-        if (state is UpdateState.Checking || state is UpdateState.Downloading) return
+        if (state is UpdateState.Checking) return
         if (!silent) state = UpdateState.Checking
         scope.launch {
             val result = withContext(Dispatchers.IO) { fetchLatest() }
@@ -114,58 +102,15 @@ class UpdateController(private val ctx: Context, private val scope: CoroutineSco
         }
     }
 
-    fun download(info: ReleaseInfo) {
-        if (state is UpdateState.Downloading) return
-        cancelled = false
-        state = UpdateState.Downloading(info, 0L, info.sizeBytes)
-        scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    downloadApk(info) { done, total ->
-                        state = UpdateState.Downloading(info, done, total)
-                    }
-                }
-            }
-            result.onSuccess { file ->
-                state = UpdateState.Ready(info, file)
-            }.onFailure { e ->
-                state = if (e is DownloadCancelled) {
-                    UpdateState.Idle
-                } else if (e is IOException) {
-                    UpdateState.Failed("The download was interrupted. Check your internet connection and try again.")
-                } else {
-                    UpdateState.Failed(e.message ?: "The download failed.")
-                }
-            }
-        }
+    /** Opens the APK link; the browser downloads the file. Returns false if nothing could open it. */
+    fun openDownload(info: ReleaseInfo): Boolean = try {
+        ctx.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(info.apkUrl)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        true
+    } catch (e: Exception) {
+        false
     }
-
-    fun cancelDownload() {
-        cancelled = true
-    }
-
-    /**
-     * Opens Android's installer for the downloaded APK. Returns false when the user first has to
-     * allow this app to install apps; the settings screen for that is opened instead.
-     */
-    fun install(file: File): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !ctx.packageManager.canRequestPackageInstalls()) {
-            val settings = Intent(
-                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                Uri.parse("package:" + ctx.packageName)
-            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            ctx.startActivity(settings)
-            return false
-        }
-        val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", file)
-        val intent = Intent(Intent.ACTION_VIEW)
-            .setDataAndType(uri, "application/vnd.android.package-archive")
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-        ctx.startActivity(intent)
-        return true
-    }
-
-    // ---- Network ----
 
     private fun fetchLatest(): Result<ReleaseInfo> = runCatching {
         val conn = URL("https://api.github.com/repos/$UPDATE_REPO/releases/latest")
@@ -199,49 +144,6 @@ class UpdateController(private val ctx: Context, private val scope: CoroutineSco
             conn.disconnect()
         }
     }
-
-    private fun downloadApk(info: ReleaseInfo, onProgress: (Long, Long) -> Unit): File {
-        val dir = File(ctx.cacheDir, "updates")
-        dir.mkdirs()
-        dir.listFiles()?.forEach { it.delete() }   // remove older downloads
-        val out = File(dir, "PayoutTracker-" + info.tag + ".apk")
-        val conn = URL(info.apkUrl).openConnection() as HttpURLConnection
-        conn.connectTimeout = 15000
-        conn.readTimeout = 30000
-        try {
-            if (conn.responseCode != 200) throw Exception("The download failed (error ${conn.responseCode}).")
-            val total = if (conn.contentLengthLong > 0) conn.contentLengthLong else info.sizeBytes
-            var done = 0L
-            conn.inputStream.use { input ->
-                out.outputStream().use { output ->
-                    val buf = ByteArray(32 * 1024)
-                    var lastReported = 0L
-                    while (true) {
-                        if (cancelled) throw DownloadCancelled()
-                        val n = input.read(buf)
-                        if (n < 0) break
-                        output.write(buf, 0, n)
-                        done += n
-                        if (done - lastReported >= 64 * 1024) {
-                            lastReported = done
-                            onProgress(done, total)
-                        }
-                    }
-                }
-            }
-            if (total > 0 && done != total) {
-                out.delete()
-                throw IOException("incomplete download")
-            }
-            onProgress(done, total)
-            return out
-        } catch (e: Exception) {
-            out.delete()
-            throw e
-        } finally {
-            conn.disconnect()
-        }
-    }
 }
 
 /** True when version name [remote] (like "1.10") is higher than [local] (like "1.9"). */
@@ -261,19 +163,14 @@ fun isNewer(remote: String, local: String): Boolean {
 private fun megabytes(bytes: Long): String =
     String.format(Locale.US, "%.1f MB", bytes / 1048576.0)
 
-/** The App Update dialog: checking, up to date, update available, downloading, ready to install, error. */
+/** The App Update dialog: checking, up to date, update available, error. */
 @Composable
 fun UpdateDialog(controller: UpdateController, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val st = controller.state
 
-    val close = {
-        if (st is UpdateState.Downloading) controller.cancelDownload()
-        onDismiss()
-    }
-
     AlertDialog(
-        onDismissRequest = close,
+        onDismissRequest = onDismiss,
         containerColor = Color(0xFF111111),
         titleContentColor = White,
         textContentColor = White,
@@ -300,32 +197,9 @@ fun UpdateDialog(controller: UpdateController, onDismiss: () -> Unit) {
                         if (st.info.sizeBytes > 0) {
                             Text("Download size: " + megabytes(st.info.sizeBytes), color = Gray, fontSize = 12.sp)
                         }
-                    }
-                    is UpdateState.Downloading -> {
-                        Text("Downloading version " + st.info.version + "...")
-                        Spacer(Modifier.height(10.dp))
-                        if (st.total > 0) {
-                            LinearProgressIndicator(
-                                progress = (st.done.toFloat() / st.total.toFloat()).coerceIn(0f, 1f),
-                                modifier = Modifier.fillMaxWidth(),
-                                color = Green,
-                                trackColor = LineColor
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Text(megabytes(st.done) + " of " + megabytes(st.total), color = Gray, fontSize = 12.sp)
-                        } else {
-                            LinearProgressIndicator(
-                                modifier = Modifier.fillMaxWidth(),
-                                color = Green,
-                                trackColor = LineColor
-                            )
-                        }
-                    }
-                    is UpdateState.Ready -> {
-                        Text("Version " + st.info.version + " is ready to install.", color = Green, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(8.dp))
                         Text(
-                            "Android will ask you to confirm. Your targets and entries are kept.",
+                            "Tap Download. Your browser saves the APK; open it from the download notification and tap Install. Your targets and entries are kept.",
                             color = Gray,
                             fontSize = 12.sp
                         )
@@ -338,19 +212,11 @@ fun UpdateDialog(controller: UpdateController, onDismiss: () -> Unit) {
         },
         confirmButton = {
             when (st) {
-                is UpdateState.Available -> TextButton(onClick = { controller.download(st.info) }) {
-                    Text("Download", color = Green, fontWeight = FontWeight.Bold)
-                }
-                is UpdateState.Ready -> TextButton(onClick = {
-                    val started = controller.install(st.file)
-                    if (!started) {
-                        Toast.makeText(
-                            ctx,
-                            "Allow Payout Tracker to install apps, then come back and tap Install again.",
-                            Toast.LENGTH_LONG
-                        ).show()
+                is UpdateState.Available -> TextButton(onClick = {
+                    if (!controller.openDownload(st.info)) {
+                        Toast.makeText(ctx, "Could not open the download link.", Toast.LENGTH_LONG).show()
                     }
-                }) { Text("Install", color = Green, fontWeight = FontWeight.Bold) }
+                }) { Text("Download", color = Green, fontWeight = FontWeight.Bold) }
                 is UpdateState.Failed -> TextButton(onClick = { controller.check(silent = false) }) {
                     Text("Retry", color = Green, fontWeight = FontWeight.Bold)
                 }
@@ -358,10 +224,9 @@ fun UpdateDialog(controller: UpdateController, onDismiss: () -> Unit) {
             }
         },
         dismissButton = {
-            TextButton(onClick = close) {
+            TextButton(onClick = onDismiss) {
                 Text(
                     when (st) {
-                        is UpdateState.Downloading -> "Cancel"
                         is UpdateState.Available -> "Later"
                         is UpdateState.UpToDate -> "OK"
                         else -> "Close"
