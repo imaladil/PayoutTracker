@@ -55,12 +55,29 @@ class AppGate(ctx: Context) {
 
     val mustUpdate: Boolean get() = minVersion > versionCode
 
+    /** Personal numbers people send money to; the admin sets them in the Admin Panel. */
+    var bkash by mutableStateOf("")
+        private set
+    var nagad by mutableStateOf("")
+        private set
+    var rocket by mutableStateOf("")
+        private set
+
+    fun numberFor(method: String): String = when (method) {
+        "nagad" -> nagad
+        "rocket" -> rocket
+        else -> bkash
+    }
+
     init {
         if (FirebaseApp.getApps(ctx).isNotEmpty()) {
             FirebaseFirestore.getInstance().collection("config").document("app")
                 .addSnapshotListener { snap, _ ->
                     if (snap == null) return@addSnapshotListener
                     minVersion = snap.getLong("minVersionCode") ?: 0L
+                    bkash = snap.getString("bkashNumber") ?: ""
+                    nagad = snap.getString("nagadNumber") ?: ""
+                    rocket = snap.getString("rocketNumber") ?: ""
                 }
         }
     }

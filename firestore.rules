@@ -6,20 +6,48 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Replace with your admin Gmail (same address as ADMIN_EMAIL in Config.kt), all lower case.
     function isAdmin() {
       return signedIn()
         && request.auth.token.email_verified == true
-        && request.auth.token.email.lower() == 'change_me@gmail.com';
+        && request.auth.token.email.lower() == 'imabdullahaladil1998@gmail.com';
     }
 
-    // App settings (for example the minimum allowed version). Anyone can read, only the admin writes.
+    // The signed-in person's own user document (trial start, paid period, termination)
+    function me() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function activeUser() {
+      return isAdmin() || (signedIn() && me().get('terminated', false) != true);
+    }
+
+    // Live and Pre-Match: free trial (7 calendar days, with a little slack) or paid / bonus time
+    function hasAccess() {
+      return isAdmin() || (signedIn()
+        && me().get('terminated', false) != true
+        && (request.time < me().createdAt + duration.value(8, 'd')
+            || request.time <= me().get('paidUntil', timestamp.date(2000, 1, 1))
+            || request.time <= me().get('bonusUntil', timestamp.date(2000, 1, 1))));
+    }
+
+    // Settings: anyone reads, only the admin writes
     match /config/{doc} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // One document per person. Phase 1 stores the sign-in session here.
+    // Bets. Settled ones (won/lost) are public so the Results list works without login.
+    match /events/{id} {
+      allow read: if resource.data.settled == true || hasAccess();
+      allow write: if isAdmin();
+    }
+
+    match /strategies/{id} {
+      allow read: if activeUser();
+      allow write: if isAdmin();
+    }
+
+    // Subscription fields (paidUntil, bonusUntil, terminated, totalPaid) can only be written by the admin
     match /users/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
 
@@ -36,6 +64,74 @@ service cloud.firestore {
         || isAdmin();
 
       allow delete: if isAdmin();
+    }
+
+    // Messages from the admin: to everyone ('all') or to one person (their uid)
+    match /messages/{id} {
+      allow read: if signedIn() && (resource.data.to == 'all' || resource.data.to == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Contact Us messages
+    match /threads/{id} {
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if activeUser() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.keys().hasOnly(['uid', 'email', 'name', 'subject', 'body', 'createdAt'])
+        && request.resource.data.subject.size() <= 80
+        && request.resource.data.body.size() <= 2000;
+      allow update, delete: if isAdmin();
+    }
+
+    // Payments the person submitted. They can edit one for an hour, the admin does the rest.
+    match /payments/{id} {
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+
+      allow create: if activeUser() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.submittedAt == request.time
+        && request.resource.data.method in ['bkash', 'nagad', 'rocket']
+        && request.resource.data.plan in ['30d', '6m', '1y']
+        && request.resource.data.trxId is string
+        && request.resource.data.keys().hasOnly(
+             ['uid', 'email', 'name', 'method', 'plan', 'amount', 'sender', 'trxId', 'status', 'createdAt', 'submittedAt']);
+
+      allow update: if isAdmin()
+        || (signedIn() && resource.data.uid == request.auth.uid
+            && resource.data.status == 'pending'
+            && request.time < resource.data.submittedAt + duration.value(1, 'h')
+            && request.resource.data.submittedAt == request.time
+            && request.resource.data.method in ['bkash', 'nagad', 'rocket']
+            && request.resource.data.plan in ['30d', '6m', '1y']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+                 ['method', 'plan', 'amount', 'sender', 'trxId', 'submittedAt']));
+
+      allow delete: if isAdmin();
+    }
+
+    // Every submitted Transaction ID is stored once, so it can never be used again.
+    // The document id is the Transaction ID in capital letters.
+    match /trxIds/{trx} {
+      allow get: if signedIn();
+      allow create: if (isAdmin() || (activeUser() && request.resource.data.uid == request.auth.uid))
+        && trx == trx.upper()
+        && request.resource.data.keys().hasOnly(['uid', 'paymentId']);
+      allow delete: if isAdmin()
+        || (signedIn() && resource.data.uid == request.auth.uid
+            && get(/databases/$(database)/documents/payments/$(resource.data.paymentId)).data.status == 'pending'
+            && request.time < get(/databases/$(database)/documents/payments/$(resource.data.paymentId)).data.submittedAt + duration.value(1, 'h'));
+    }
+
+    // "I paid but nothing happened" reports
+    match /reports/{id} {
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if activeUser() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'waiting'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.keys().hasOnly(
+             ['uid', 'email', 'name', 'paymentId', 'method', 'paidAt', 'trxId', 'status', 'createdAt']);
+      allow update, delete: if isAdmin();
     }
   }
 }

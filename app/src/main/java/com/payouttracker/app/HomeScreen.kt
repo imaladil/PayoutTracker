@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +34,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -116,17 +118,27 @@ fun HomeBox(
 @Composable
 fun HomeScreen(
     state: TrackerState,
+    repo: EventsRepo,
+    user: AuthUser?,
     onTrack: () -> Unit,
     onSummary: () -> Unit,
     onReport: () -> Unit,
-    onContactMessage: () -> Unit,
-    onContactGroup: () -> Unit,
+    onContact: () -> Unit,
     onTelegram: () -> Unit,
-    user: AuthUser?,
     onLogin: () -> Unit,
+    onSubscribe: () -> Unit,
+    onMailbox: () -> Unit,
+    access: Access,
+    unread: Int,
+    onLive: () -> Unit,
+    onPreMatch: () -> Unit,
+    onResults: () -> Unit,
+    onStrategy: () -> Unit,
+    onStrategyPost: (String) -> Unit,
+    onAdmin: () -> Unit,
     onMenu: () -> Unit
 ) {
-    var contactOpen by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
     val total = state.targets.size
     val active = state.targets.count { !it.isFulfilled }
     val footer = if (total == 0) {
@@ -146,6 +158,7 @@ fun HomeScreen(
                 Text("Payout Tracker", color = White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
                 Text("Track • Analyze • Reach your target", color = Gray, fontSize = 13.sp)
             }
+            if (user != null) MailButton(unread, onMailbox)
             IconButton(onClick = onMenu) {
                 Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = White)
             }
@@ -168,20 +181,109 @@ fun HomeScreen(
             }
         } else {
             Text("Signed in as " + user.email, color = Gray, fontSize = 12.sp)
+            if (!user.isAdmin) {
+                Spacer(Modifier.height(8.dp))
+                if (access.premium) {
+                    Pill("Premium until " + dateOnly(access.until))
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Button(
+                            onClick = onSubscribe,
+                            colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Black)
+                        ) { Text("Subscribe", fontWeight = FontWeight.Bold) }
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            if (access.phase == "trial") access.daysLeft.toString() + " day(s) of free trial left" else "Free trial ended",
+                            color = Gray, fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+            if (user.isAdmin) {
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(onClick = onAdmin) { Text("Admin Panel", color = Green, fontWeight = FontWeight.Bold) }
+            }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(10.dp))
+
+        // ---- Live ----
+        val live = repo.liveEvents
+        SectionHeader("LIVE", Green, if (access.canView) live.size else null, true, onLive)
+        if (user == null) {
+            LockedBox("Live", LiveColors, onLogin)
+        } else if (!access.canView) {
+            LockedBox("Live", LiveColors, onSubscribe, "Subscribe", "Subscribe to view")
+        } else if (live.isEmpty()) {
+            EmptyCard("No live events right now.", LiveColors, onLive)
+        } else {
+            live.take(2).forEach { e ->
+                EventCard(e, LiveColors, true, onClick = onLive)
+                Spacer(Modifier.height(10.dp))
+            }
+        }
+
+        // ---- Pre-Match ----
+        val pre = repo.preMatchEvents
+        SectionHeader("Pre-Match", Color(0xFF8C9EFF), if (access.canView) pre.size else null, false, onPreMatch)
+        if (user == null) {
+            LockedBox("Pre-Match", PreMatchColors, onLogin)
+        } else if (!access.canView) {
+            LockedBox("Pre-Match", PreMatchColors, onSubscribe, "Subscribe", "Subscribe to view")
+        } else if (pre.isEmpty()) {
+            EmptyCard("No upcoming events.", PreMatchColors, onPreMatch)
+        } else {
+            pre.take(2).forEach { e ->
+                EventCard(e, PreMatchColors, false, onClick = onPreMatch)
+                Spacer(Modifier.height(10.dp))
+            }
+        }
+
+        // ---- Results (open to everyone) ----
+        SectionHeader("Results", GoldColors[0], null, false, onResults)
+        StatsRow(repo)
+        Spacer(Modifier.height(10.dp))
+        SearchField(query, { query = it })
+        Spacer(Modifier.height(10.dp))
+        val shown = repo.results.filter { it.matches(query) }
+        val limit = if (query.isBlank()) 5 else 20
+        if (shown.isEmpty()) {
+            Text(if (query.isBlank()) "No results yet." else "No matching results.", color = Gray, fontSize = 13.sp)
+        } else {
+            shown.take(limit).forEach { e ->
+                ResultRow(e)
+                Spacer(Modifier.height(8.dp))
+            }
+            if (shown.size > limit) {
+                TextButton(onClick = onResults) { Text("View all results", color = GoldColors[0], fontWeight = FontWeight.Bold) }
+            }
+        }
+
+        // ---- Strategy ----
+        SectionHeader("Strategy", Color(0xFFF48FB1), null, false, onStrategy)
+        if (user == null) {
+            LockedBox("Strategy", StrategyColors, onLogin)
+        } else if (repo.strategies.isEmpty()) {
+            EmptyCard("No strategy posts yet.", StrategyColors, onStrategy)
+        } else {
+            repo.strategies.take(3).forEach { p ->
+                StrategyRow(p) { onStrategyPost(p.id) }
+                Spacer(Modifier.height(10.dp))
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
 
         HomeBox(
             title = "Track Payout",
             subtitle = "Record stakes, odds & payouts",
             icon = Icons.Filled.AttachMoney,
-            colors = TrackColors,
+            colors = GoldColors,
             big = true,
             footer = footer,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(210.dp),
+                .height(190.dp),
             onClick = onTrack
         )
 
@@ -223,32 +325,21 @@ fun HomeScreen(
                 .height(150.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Contact Us opens a dropdown (Message Me / Telegram Group) right under the box
-            Box(
+            HomeBox(
+                title = "Contact Us",
+                subtitle = "Message the admin",
+                icon = Icons.Filled.SupportAgent,
+                colors = UpdateColors,
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxHeight()
-            ) {
-                HomeBox(
-                    title = "Contact Us",
-                    subtitle = "Telegram chat & group",
-                    icon = Icons.Filled.SupportAgent,
-                    colors = MessageColors,
-                    modifier = Modifier.fillMaxSize(),
-                    onClick = { contactOpen = true }
-                )
-                ContactMenu(
-                    expanded = contactOpen,
-                    onDismiss = { contactOpen = false },
-                    onMessageMe = onContactMessage,
-                    onTelegramGroup = onContactGroup
-                )
-            }
+                    .fillMaxHeight(),
+                onClick = onContact
+            )
             HomeBox(
                 title = "Telegram",
                 subtitle = "Chat with the admin",
                 icon = Icons.AutoMirrored.Filled.Send,
-                colors = UpdateColors,
+                colors = MessageColors,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight(),

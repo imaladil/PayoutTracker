@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Only used to look for a newer release on GitHub -->
+    <!-- Sign-in, shared data and the update check -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Alerts about new events, messages and updates -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"

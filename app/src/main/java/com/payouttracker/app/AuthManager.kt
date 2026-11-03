@@ -64,6 +64,10 @@ class AuthManager(private val ctx: Context, private val scope: CoroutineScope) {
     var busy by mutableStateOf(false)
         private set
 
+    /** Subscription facts about the signed-in person (trial start, paid period, termination). */
+    var profile by mutableStateOf(Profile())
+        private set
+
     /** Error shown on the login page. */
     var error by mutableStateOf<String?>(null)
 
@@ -90,9 +94,9 @@ class AuthManager(private val ctx: Context, private val scope: CoroutineScope) {
         registration?.remove()
         registration = FirebaseFirestore.getInstance().collection("users").document(uid)
             .addSnapshotListener { snap, _ ->
-                if (snap == null || !snap.exists() || snap.metadata.hasPendingWrites()) {
-                    return@addSnapshotListener
-                }
+                if (snap == null || !snap.exists()) return@addSnapshotListener
+                profile = profileOf(snap)
+                if (snap.metadata.hasPendingWrites()) return@addSnapshotListener
                 val active = snap.getString("activeSession")
                 if (active != null && active != session) {
                     notice = "You were signed out because this account was opened on another device."
@@ -107,6 +111,7 @@ class AuthManager(private val ctx: Context, private val scope: CoroutineScope) {
         prefs.edit().remove("session").apply()
         if (firebaseReady) FirebaseAuth.getInstance().signOut()
         user = null
+        profile = Profile()
         scope.launch {
             try {
                 CredentialManager.create(ctx).clearCredentialState(ClearCredentialStateRequest())

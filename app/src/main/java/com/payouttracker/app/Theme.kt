@@ -217,3 +217,10 @@ fun SemiGauge(progress: Float, label: String, modifier: Modifier = Modifier) {
         )
     }
 }
+
+// Accent colors of the event sections
+val GoldColors = listOf(Color(0xFFFFC107), Color(0xFFB36B00))
+val LiveColors = TrackColors
+val PreMatchColors = listOf(Color(0xFF5C6BC0), Color(0xFF1A237E))
+val StrategyColors = listOf(Color(0xFFEC407A), Color(0xFF880E4F))
+val UnsettledColor = Color(0xFFFFB300)

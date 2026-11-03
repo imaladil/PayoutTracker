@@ -1,8 +1,17 @@
 package com.payouttracker.app
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.ui.draw.blur
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -22,7 +31,12 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.SupportAgent
+import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
@@ -53,14 +67,18 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // Summary and Report are the target lists; SummaryDetail and ReportDetail show one target
 // (or all targets combined when targetId is null).
-enum class Screen { Home, Login, Targets, Detail, Summary, SummaryDetail, Report, ReportDetail }
+enum class Screen {
+    Home, Login, Live, PreMatch, Results, Strategy, StrategyPost, Admin, AdminEvent, AdminPost,
+    AdminUsers, AdminReports, AdminInbox, Subscribe, PayReport, Contact, Mailbox,
+    Targets, Detail, Summary, SummaryDetail, Report, ReportDetail }
 
 /** One place in the app. [targetId] is used by Detail, SummaryDetail and ReportDetail. */
-data class Route(val screen: Screen, val targetId: Long? = null)
+data class Route(val screen: Screen, val targetId: Long? = null, val docId: String? = null)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -94,6 +112,46 @@ fun AppRoot(onExit: () -> Unit) {
     // Forced updates download the new APK from the latest GitHub release
     val updater = remember { UpdateController(ctx.applicationContext, scope) }
 
+    // Live events, results and strategy posts
+    val repo = remember { EventsRepo(ctx.applicationContext) }
+    LaunchedEffect(auth.user) { repo.onAuth(auth.user != null) }
+    // Messages, payments, reports and (for the admin) users
+    val account = remember { AccountRepo(ctx.applicationContext) }
+    LaunchedEffect(auth.user) { account.onAuth(auth.user) }
+    val access = computeAccess(auth.user, auth.profile, repo.now)
+
+    // Notifications: permission, channel, and a quiet check for a newer release
+    val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(Unit) {
+        Notifier.init(ctx.applicationContext)
+        updater.check(silent = true)
+    }
+    LaunchedEffect(auth.user) {
+        if (auth.user != null && Build.VERSION.SDK_INT >= 33 &&
+            ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+    LaunchedEffect(updater.newVersion) {
+        val v = updater.newVersion
+        if (v != null) {
+            val prefs = ctx.getSharedPreferences("account", android.content.Context.MODE_PRIVATE)
+            if (prefs.getString("notified_version", "") != v) {
+                prefs.edit().putString("notified_version", v).apply()
+                Notifier.show(ctx, "Update available", "Payout Tracker " + v + " is available.")
+            }
+        }
+    }
+    // Moves Pre-Match events to Live when their start time arrives
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(15000)
+            repo.tick()
+        }
+    }
+    val isAdmin = auth.user?.isAdmin == true
+
     // Close the login page as soon as sign-in succeeds
     LaunchedEffect(auth.user) {
         if (auth.user != null && stack.last().screen == Screen.Login) {
@@ -124,6 +182,29 @@ fun AppRoot(onExit: () -> Unit) {
         push(Route(Screen.Login))
     }
 
+    fun openContact() {
+        if (auth.user == null) openLogin() else push(Route(Screen.Contact))
+    }
+
+    // Daily reminders: from the 5th day of the trial a message each day, after the trial the
+    // payment page opens once a day.
+    var nudge by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(auth.profile.loaded, auth.user) {
+        val u = auth.user
+        if (u != null && !u.isAdmin && auth.profile.loaded) {
+            val now = System.currentTimeMillis()
+            val a = computeAccess(u, auth.profile, now)
+            if (!a.terminated) {
+                val dayIndex = (endOfDay(now) - endOfDay(auth.profile.createdAt)) / DAY_MS
+                if (a.phase == "trial" && dayIndex >= 5 && account.firstTimeToday("nudge", now)) {
+                    nudge = "Your free trial ends on " + dateOnly(a.until) + ". Subscribe to keep seeing Live and Pre-Match."
+                } else if (a.phase == "expired" && account.firstTimeToday("pay", now)) {
+                    stack.add(Route(Screen.Subscribe))
+                }
+            }
+        }
+    }
+
     // Back: close the menu first, then go one screen back.
     // On the Home screen, pressing back twice quickly exits the app.
     BackHandler(enabled = true) {
@@ -150,7 +231,9 @@ fun AppRoot(onExit: () -> Unit) {
 
     val openMenu: () -> Unit = { scope.launch { drawerState.open() } }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     ModalNavigationDrawer(
+        modifier = if (access.terminated) Modifier.blur(14.dp) else Modifier,
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(
@@ -164,8 +247,21 @@ fun AppRoot(onExit: () -> Unit) {
                 Divider(color = LineColor)
                 Spacer(Modifier.height(8.dp))
                 MenuItem("Home", Icons.Filled.Home, White, current.screen == Screen.Home) { goHome() }
+                MenuItem("Live", Icons.Filled.FiberManualRecord, Green, current.screen == Screen.Live) {
+                    push(Route(Screen.Live))
+                }
+                MenuItem("Pre-Match", Icons.Filled.Schedule, PreMatchColors[0], current.screen == Screen.PreMatch) {
+                    push(Route(Screen.PreMatch))
+                }
+                MenuItem("Results", Icons.Filled.EmojiEvents, GoldColors[0], current.screen == Screen.Results) {
+                    push(Route(Screen.Results))
+                }
                 MenuItem(
-                    "Track Payout", Icons.Filled.AttachMoney, TrackColors[0],
+                    "Strategy", Icons.Filled.Lightbulb, StrategyColors[0],
+                    current.screen == Screen.Strategy || current.screen == Screen.StrategyPost
+                ) { push(Route(Screen.Strategy)) }
+                MenuItem(
+                    "Track Payout", Icons.Filled.AttachMoney, GoldColors[0],
                     current.screen == Screen.Targets || current.screen == Screen.Detail
                 ) { push(Route(Screen.Targets)) }
                 MenuItem(
@@ -177,24 +273,30 @@ fun AppRoot(onExit: () -> Unit) {
                     current.screen == Screen.Report || current.screen == Screen.ReportDetail
                 ) { push(Route(Screen.Report)) }
 
-                // Contact Us expands into Message Me and Telegram Group
-                MenuItem(
-                    "Contact Us", Icons.Filled.SupportAgent, MessageColors[0], false,
-                    trailing = if (contactExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore
-                ) { contactExpanded = !contactExpanded }
-                if (contactExpanded) {
-                    MenuItem(
-                        "Message Me", Icons.AutoMirrored.Filled.Send, MessageColors[0], false,
-                        indent = true
-                    ) { openLink(LINK_MESSAGE) }
-                    MenuItem(
-                        "Telegram Group", Icons.Filled.Groups, MessageColors[0], false,
-                        indent = true
-                    ) { openLink(LINK_GROUP) }
+                MenuItem("Contact Us", Icons.Filled.SupportAgent, UpdateColors[0], current.screen == Screen.Contact) {
+                    closeDrawer()
+                    openContact()
                 }
-
-                MenuItem("Telegram", Icons.AutoMirrored.Filled.Send, UpdateColors[0], false) {
+                MenuItem("Telegram", Icons.AutoMirrored.Filled.Send, MessageColors[0], false) {
                     openLink(LINK_TELEGRAM)
+                }
+                if (auth.user != null) {
+                    MenuItem("Mailbox", Icons.Filled.Email, Green, current.screen == Screen.Mailbox) {
+                        push(Route(Screen.Mailbox))
+                    }
+                    if (!isAdmin) {
+                        MenuItem("Subscribe", Icons.Filled.Payments, Green, current.screen == Screen.Subscribe) {
+                            push(Route(Screen.Subscribe))
+                        }
+                    }
+                }
+                if (isAdmin) {
+                    MenuItem(
+                        "Admin Panel", Icons.Filled.AdminPanelSettings, Green,
+                        current.screen == Screen.Admin || current.screen == Screen.AdminEvent ||
+                            current.screen == Screen.AdminPost || current.screen == Screen.AdminUsers ||
+                            current.screen == Screen.AdminReports || current.screen == Screen.AdminInbox
+                    ) { push(Route(Screen.Admin)) }
                 }
                 Spacer(Modifier.height(8.dp))
                 Divider(color = LineColor)
@@ -223,16 +325,203 @@ fun AppRoot(onExit: () -> Unit) {
         when (current.screen) {
             Screen.Home -> HomeScreen(
                 state = state,
+                repo = repo,
+                user = auth.user,
+                onLive = { push(Route(Screen.Live)) },
+                onPreMatch = { push(Route(Screen.PreMatch)) },
+                onResults = { push(Route(Screen.Results)) },
+                onStrategy = { push(Route(Screen.Strategy)) },
+                onStrategyPost = { id -> push(Route(Screen.StrategyPost, docId = id)) },
+                onAdmin = { push(Route(Screen.Admin)) },
                 onTrack = { push(Route(Screen.Targets)) },
                 onSummary = { push(Route(Screen.Summary)) },
                 onReport = { push(Route(Screen.Report)) },
-                onContactMessage = { openLink(LINK_MESSAGE) },
-                onContactGroup = { openLink(LINK_GROUP) },
+                onContact = { openContact() },
                 onTelegram = { openLink(LINK_TELEGRAM) },
-                user = auth.user,
                 onLogin = { openLogin() },
+                onSubscribe = { push(Route(Screen.Subscribe)) },
+                onMailbox = { push(Route(Screen.Mailbox)) },
+                access = access,
+                unread = if (auth.user != null && auth.profile.loaded) account.unread(auth.profile.createdAt).size else 0,
                 onMenu = openMenu
             )
+
+            Screen.Live -> EventListScreen(
+                title = "Live",
+                colors = LiveColors,
+                live = true,
+                events = repo.liveEvents,
+                emptyText = "No live events right now.",
+                repo = repo,
+                access = access,
+                onLogin = { openLogin() },
+                onSubscribe = { push(Route(Screen.Subscribe)) },
+                onBack = { stack.removeAt(stack.lastIndex) },
+                onMenu = openMenu
+            )
+
+            Screen.PreMatch -> EventListScreen(
+                title = "Pre-Match",
+                colors = PreMatchColors,
+                live = false,
+                events = repo.preMatchEvents,
+                emptyText = "No upcoming events.",
+                repo = repo,
+                access = access,
+                onLogin = { openLogin() },
+                onSubscribe = { push(Route(Screen.Subscribe)) },
+                onBack = { stack.removeAt(stack.lastIndex) },
+                onMenu = openMenu
+            )
+
+            Screen.Results -> ResultsScreen(
+                repo = repo,
+                onBack = { stack.removeAt(stack.lastIndex) },
+                onMenu = openMenu
+            )
+
+            Screen.Strategy -> StrategyListScreen(
+                repo = repo,
+                signedIn = auth.user != null,
+                onLogin = { openLogin() },
+                onOpen = { id -> push(Route(Screen.StrategyPost, docId = id)) },
+                onBack = { stack.removeAt(stack.lastIndex) },
+                onMenu = openMenu
+            )
+
+            Screen.StrategyPost -> {
+                val post = repo.findPost(current.docId)
+                if (post == null) {
+                    LaunchedEffect(current) {
+                        if (stack.size > 1) stack.removeAt(stack.lastIndex)
+                    }
+                } else {
+                    StrategyPostScreen(
+                        post = post,
+                        onBack = { stack.removeAt(stack.lastIndex) },
+                        onMenu = openMenu
+                    )
+                }
+            }
+
+            Screen.AdminUsers -> if (isAdmin) {
+                AdminUsersScreen(account, onBack = { stack.removeAt(stack.lastIndex) }, onMenu = openMenu)
+            } else {
+                LaunchedEffect(current) {
+                    if (stack.size > 1) stack.removeAt(stack.lastIndex)
+                }
+            }
+
+            Screen.AdminReports -> if (isAdmin) {
+                AdminReportsScreen(account, onBack = { stack.removeAt(stack.lastIndex) }, onMenu = openMenu)
+            } else {
+                LaunchedEffect(current) {
+                    if (stack.size > 1) stack.removeAt(stack.lastIndex)
+                }
+            }
+
+            Screen.AdminInbox -> if (isAdmin) {
+                AdminInboxScreen(account, onBack = { stack.removeAt(stack.lastIndex) }, onMenu = openMenu)
+            } else {
+                LaunchedEffect(current) {
+                    if (stack.size > 1) stack.removeAt(stack.lastIndex)
+                }
+            }
+
+            Screen.Mailbox -> MailboxScreen(
+                account = account,
+                onBack = { stack.removeAt(stack.lastIndex) },
+                onMenu = openMenu
+            )
+
+            Screen.Contact -> {
+                val me = auth.user
+                if (me == null) {
+                    LaunchedEffect(current) {
+                        if (stack.size > 1) stack.removeAt(stack.lastIndex)
+                    }
+                } else {
+                    ContactScreen(
+                        account = account,
+                        user = me,
+                        onGroup = { openLink(LINK_GROUP) },
+                        onBack = { stack.removeAt(stack.lastIndex) },
+                        onMenu = openMenu
+                    )
+                }
+            }
+
+            Screen.Subscribe -> {
+                val me = auth.user
+                if (me == null) {
+                    LaunchedEffect(current) {
+                        if (stack.size > 1) stack.removeAt(stack.lastIndex)
+                    }
+                } else {
+                    SubscribeScreen(
+                        account = account,
+                        gate = gate,
+                        user = me,
+                        access = access,
+                        now = repo.now,
+                        onReport = { id -> push(Route(Screen.PayReport, docId = id)) },
+                        onBack = { stack.removeAt(stack.lastIndex) },
+                        onMenu = openMenu
+                    )
+                }
+            }
+
+            Screen.PayReport -> {
+                val me = auth.user
+                if (me == null) {
+                    LaunchedEffect(current) {
+                        if (stack.size > 1) stack.removeAt(stack.lastIndex)
+                    }
+                } else {
+                    PayReportScreen(
+                        account = account,
+                        user = me,
+                        paymentId = current.docId ?: "",
+                        onBack = { stack.removeAt(stack.lastIndex) },
+                        onMenu = openMenu
+                    )
+                }
+            }
+
+            Screen.Admin, Screen.AdminEvent, Screen.AdminPost -> {
+                if (!isAdmin) {
+                    LaunchedEffect(current) {
+                        if (stack.size > 1) stack.removeAt(stack.lastIndex)
+                    }
+                } else if (current.screen == Screen.Admin) {
+                    AdminScreen(
+                        repo = repo,
+                        gate = gate,
+                        account = account,
+                        onUsers = { push(Route(Screen.AdminUsers)) },
+                        onReports = { push(Route(Screen.AdminReports)) },
+                        onInbox = { push(Route(Screen.AdminInbox)) },
+                        onBack = { stack.removeAt(stack.lastIndex) },
+                        onMenu = openMenu,
+                        onNewEvent = { push(Route(Screen.AdminEvent, docId = "new")) },
+                        onEditEvent = { id -> push(Route(Screen.AdminEvent, docId = id)) },
+                        onNewPost = { push(Route(Screen.AdminPost)) }
+                    )
+                } else if (current.screen == Screen.AdminEvent) {
+                    EventEditorScreen(
+                        initial = repo.findEvent(current.docId),
+                        repo = repo,
+                        onBack = { stack.removeAt(stack.lastIndex) },
+                        onMenu = openMenu
+                    )
+                } else {
+                    PostEditorScreen(
+                        repo = repo,
+                        onBack = { stack.removeAt(stack.lastIndex) },
+                        onMenu = openMenu
+                    )
+                }
+            }
 
             Screen.Login -> LoginScreen(
                 auth = auth,
@@ -261,7 +550,7 @@ fun AppRoot(onExit: () -> Unit) {
                         onMenu = openMenu,
                         onSummary = { push(Route(Screen.SummaryDetail, target.id)) },
                         onReport = { push(Route(Screen.ReportDetail, target.id)) },
-                        onContactMessage = { openLink(LINK_MESSAGE) },
+                        onContactMessage = { openContact() },
                         onContactGroup = { openLink(LINK_GROUP) },
                         onNextTarget = {
                             // Switch to the next Payout Target (wraps around to the first one)
@@ -327,6 +616,22 @@ fun AppRoot(onExit: () -> Unit) {
         }
     }
 
+    if (access.terminated) TerminatedOverlay(onLogout = { auth.logout() })
+    }
+
+    AppPopups(
+        account = account,
+        auth = auth,
+        access = access,
+        onMailboxOpen = current.screen == Screen.Mailbox,
+        nudge = nudge,
+        onNudgeLater = { nudge = null },
+        onSubscribe = {
+            nudge = null
+            push(Route(Screen.Subscribe))
+        }
+    )
+
     val notice = auth.notice
     if (notice != null) {
         AlertDialog(
@@ -343,6 +648,26 @@ fun AppRoot(onExit: () -> Unit) {
             }
         )
     }
+}
+
+@Composable
+private fun AppPopups(
+    account: AccountRepo,
+    auth: AuthManager,
+    access: Access,
+    onMailboxOpen: Boolean,
+    nudge: String?,
+    onNudgeLater: () -> Unit,
+    onSubscribe: () -> Unit
+) {
+    // A new message is shown in full; OK closes it and the next unread one appears
+    if (auth.user != null && auth.profile.loaded && !access.terminated && !onMailboxOpen) {
+        val next = account.unread(auth.profile.createdAt).firstOrNull()
+        if (next != null) {
+            MessagePopup(next) { account.markSeen(next.createdAt) }
+        }
+    }
+    if (nudge != null) NudgeDialog(nudge, onSubscribe = onSubscribe, onLater = onNudgeLater)
 }
 
 @Composable
