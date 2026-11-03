@@ -41,7 +41,6 @@ import androidx.compose.ui.unit.sp
 import java.util.Locale
 import kotlin.math.max
 
-private const val DAY_MS = 24L * 60L * 60L * 1000L
 
 // ------------------------------------------------------------------
 // Summary: last 7 days, last 30 days and overall target achievement
