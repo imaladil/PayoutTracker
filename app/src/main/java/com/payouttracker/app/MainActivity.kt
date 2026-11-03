@@ -22,8 +22,11 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.SupportAgent
-import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,7 +57,7 @@ import kotlinx.coroutines.launch
 
 // Summary and Report are the target lists; SummaryDetail and ReportDetail show one target
 // (or all targets combined when targetId is null).
-enum class Screen { Home, Targets, Detail, Summary, SummaryDetail, Report, ReportDetail }
+enum class Screen { Home, Login, Targets, Detail, Summary, SummaryDetail, Report, ReportDetail }
 
 /** One place in the app. [targetId] is used by Detail, SummaryDetail and ReportDetail. */
 data class Route(val screen: Screen, val targetId: Long? = null)
@@ -85,12 +88,18 @@ fun AppRoot(onExit: () -> Unit) {
     val lastBackAt = remember { longArrayOf(0L) }
     var contactExpanded by remember { mutableStateOf(false) }
 
-    // App updates come from the latest GitHub release
+    // Sign-in (Gmail, one device at a time) and the forced-update gate
+    val auth = remember { AuthManager(ctx.applicationContext, scope) }
+    val gate = remember { AppGate(ctx.applicationContext) }
+    // Forced updates download the new APK from the latest GitHub release
     val updater = remember { UpdateController(ctx.applicationContext, scope) }
-    var showUpdate by remember { mutableStateOf(false) }
 
-    // Quiet check at start so the App Update box can say a new version is available
-    LaunchedEffect(Unit) { updater.check(silent = true) }
+    // Close the login page as soon as sign-in succeeds
+    LaunchedEffect(auth.user) {
+        if (auth.user != null && stack.last().screen == Screen.Login) {
+            stack.removeAt(stack.lastIndex)
+        }
+    }
 
     fun closeDrawer() {
         scope.launch { drawerState.close() }
@@ -111,10 +120,8 @@ fun AppRoot(onExit: () -> Unit) {
         uriHandler.openUri(url)
     }
 
-    fun openUpdate() {
-        closeDrawer()
-        updater.onOpen()
-        showUpdate = true
+    fun openLogin() {
+        push(Route(Screen.Login))
     }
 
     // Back: close the menu first, then go one screen back.
@@ -133,6 +140,12 @@ fun AppRoot(onExit: () -> Unit) {
                 Toast.makeText(ctx, "Press back again to exit", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    // An installed version below the required minimum cannot be used until it is updated
+    if (gate.mustUpdate) {
+        ForceUpdateScreen(updater = updater, onExit = onExit)
+        return
     }
 
     val openMenu: () -> Unit = { scope.launch { drawerState.open() } }
@@ -180,10 +193,29 @@ fun AppRoot(onExit: () -> Unit) {
                     ) { openLink(LINK_GROUP) }
                 }
 
-                MenuItem("App Update", Icons.Filled.SystemUpdate, UpdateColors[0], false) { openUpdate() }
+                MenuItem("Telegram", Icons.AutoMirrored.Filled.Send, UpdateColors[0], false) {
+                    openLink(LINK_TELEGRAM)
+                }
                 Spacer(Modifier.height(8.dp))
                 Divider(color = LineColor)
                 Spacer(Modifier.height(8.dp))
+                val me = auth.user
+                if (me == null) {
+                    MenuItem("Login / Sign Up", Icons.Filled.Person, Green, current.screen == Screen.Login) {
+                        openLogin()
+                    }
+                } else {
+                    Text(
+                        me.email,
+                        color = Gray,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 4.dp)
+                    )
+                    MenuItem("Log Out", Icons.Filled.PowerSettingsNew, Red, false) {
+                        closeDrawer()
+                        auth.logout()
+                    }
+                }
                 MenuItem("Exit App", Icons.AutoMirrored.Filled.ExitToApp, Red, false) { onExit() }
             }
         }
@@ -196,9 +228,15 @@ fun AppRoot(onExit: () -> Unit) {
                 onReport = { push(Route(Screen.Report)) },
                 onContactMessage = { openLink(LINK_MESSAGE) },
                 onContactGroup = { openLink(LINK_GROUP) },
-                onUpdate = { openUpdate() },
-                newVersion = updater.newVersion,
+                onTelegram = { openLink(LINK_TELEGRAM) },
+                user = auth.user,
+                onLogin = { openLogin() },
                 onMenu = openMenu
+            )
+
+            Screen.Login -> LoginScreen(
+                auth = auth,
+                onBack = { stack.removeAt(stack.lastIndex) }
             )
 
             Screen.Targets -> TargetListScreen(
@@ -289,8 +327,21 @@ fun AppRoot(onExit: () -> Unit) {
         }
     }
 
-    if (showUpdate) {
-        UpdateDialog(controller = updater, onDismiss = { showUpdate = false })
+    val notice = auth.notice
+    if (notice != null) {
+        AlertDialog(
+            onDismissRequest = { auth.notice = null },
+            containerColor = Color(0xFF111111),
+            titleContentColor = White,
+            textContentColor = White,
+            title = { Text("Signed out", fontWeight = FontWeight.Bold) },
+            text = { Text(notice) },
+            confirmButton = {
+                TextButton(onClick = { auth.notice = null }) {
+                    Text("OK", color = Green, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 }
 

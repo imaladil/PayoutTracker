@@ -37,6 +37,16 @@ jobs:
             echo "::warning::KEYSTORE_BASE64 secret is missing. The APK will be signed with a temporary debug key and cannot update an app installed from an earlier build. Run setup.sh to add the secrets."
           fi
 
+      - name: Print signing fingerprints
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          if [ -f app/release.jks ]; then
+            keytool -list -v -keystore app/release.jks -storetype PKCS12 \
+              -storepass "$KEYSTORE_PASSWORD" -alias "${KEY_ALIAS:-payout}" | grep -E "SHA1|SHA256" || true
+          fi
+
       - name: Build release APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}

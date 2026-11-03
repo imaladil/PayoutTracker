@@ -27,9 +27,12 @@ import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -118,8 +121,9 @@ fun HomeScreen(
     onReport: () -> Unit,
     onContactMessage: () -> Unit,
     onContactGroup: () -> Unit,
-    onUpdate: () -> Unit,
-    newVersion: String?,
+    onTelegram: () -> Unit,
+    user: AuthUser?,
+    onLogin: () -> Unit,
     onMenu: () -> Unit
 ) {
     var contactOpen by remember { mutableStateOf(false) }
@@ -145,6 +149,25 @@ fun HomeScreen(
             IconButton(onClick = onMenu) {
                 Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = White)
             }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        if (user == null) {
+            // Not signed in: Sign Up and Login both lead to the login page
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onLogin,
+                    colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Black),
+                    modifier = Modifier.weight(1f)
+                ) { Text("Sign Up", fontWeight = FontWeight.Bold) }
+                OutlinedButton(
+                    onClick = onLogin,
+                    modifier = Modifier.weight(1f)
+                ) { Text("Login", color = Green, fontWeight = FontWeight.Bold) }
+            }
+        } else {
+            Text("Signed in as " + user.email, color = Gray, fontSize = 12.sp)
         }
 
         Spacer(Modifier.height(16.dp))
@@ -222,15 +245,14 @@ fun HomeScreen(
                 )
             }
             HomeBox(
-                title = "App Update",
-                subtitle = "Get the latest version",
-                icon = Icons.Filled.SystemUpdate,
+                title = "Telegram",
+                subtitle = "Chat with the admin",
+                icon = Icons.AutoMirrored.Filled.Send,
                 colors = UpdateColors,
-                footer = if (newVersion != null) "Update available" else null,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight(),
-                onClick = onUpdate
+                onClick = onTelegram
             )
         }
 
