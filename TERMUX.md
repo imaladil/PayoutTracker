@@ -22,6 +22,25 @@ secrets and pushes the project.
 
 Edited a file inside Termux yourself? Use `bash update.sh --push "what I changed"`.
 
+## If google-services.json is missing
+
+`update.sh` now never deletes `app/google-services.json` and keeps a backup in `~/.payouttracker-keep`.
+GitHub also refuses to build when the file is missing, so a build without login can no longer be made by accident.
+
+First time with this version, use the new script before it runs the old one:
+
+    cd ~/PayoutTracker
+    cp app/google-services.json ~/ 2>/dev/null
+    unzip -p ~/storage/downloads/PayoutTracker.zip PayoutTracker/update.sh > update.sh
+    bash update.sh
+
+If the file is already gone, bring it back from git history:
+
+    git checkout "$(git rev-list -n 1 HEAD -- app/google-services.json)^" -- app/google-services.json
+    bash update.sh --push "Restore Firebase config"
+
+Optional extra safety: `base64 -w0 app/google-services.json | gh secret set GOOGLE_SERVICES_BASE64`
+
 ## Where is the APK?
 
 - Every push to `main`: Actions tab -> the latest run -> Artifacts -> `PayoutTracker-apk`.

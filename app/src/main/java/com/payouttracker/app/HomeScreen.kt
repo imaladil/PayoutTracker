@@ -124,22 +124,22 @@ fun HomeBox(
     }
 }
 
-/** A small glass-like panel inside the Track Payout card. */
+/** A frosted panel inside the hub card. Its tint fades into the card colours so both blend together. */
 @Composable
 private fun HubMini(
     title: String,
     subtitle: String,
     icon: ImageVector,
-    colors: List<Color>,
+    tint: Color,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(16.dp)
     Box(
         modifier = modifier
             .clip(shape)
-            .background(Brush.linearGradient(colors))
-            .border(1.dp, Color.White.copy(alpha = 0.30f), shape)
+            .background(Color.Black.copy(alpha = 0.28f))
+            .border(1.dp, tint.copy(alpha = 0.55f), shape)
             .clickable(onClick = onClick)
             .padding(12.dp)
     ) {
@@ -163,13 +163,18 @@ private fun HubMini(
             }
             Spacer(Modifier.height(6.dp))
             Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Text(subtitle, color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp)
+            Text(subtitle, color = Color.White.copy(alpha = 0.88f), fontSize = 10.sp)
         }
     }
 }
 
+// Same flat two-colour gradient style as the Live card, in its own colour (ocean blue)
+private val HubColors = listOf(Color(0xFF06B6D4), Color(0xFF155E75))
+private val HubSummaryTint = Color(0xFFFFD54F)
+private val HubReportTint = Color(0xFFE1BEE7)
+
 /**
- * Track Payout with Summary (top right) and Brief Report (bottom right) inside the same card.
+ * Track Payout with Summary (top right) and Brief Report (bottom right) blended into the same card.
  * The left part opens Track Payout; each panel on the right opens its own page.
  */
 @Composable
@@ -178,10 +183,8 @@ private fun TrackHubCard(footer: String, onTrack: () -> Unit, onSummary: () -> U
         modifier = Modifier
             .fillMaxWidth()
             .height(240.dp)
-            .clip(RoundedCornerShape(28.dp))
-            .background(
-                Brush.linearGradient(listOf(Color(0xFFFFB300), Color(0xFFF57C00), Color(0xFFB23A00)))
-            )
+            .clip(RoundedCornerShape(20.dp))
+            .background(Brush.linearGradient(HubColors))
     ) {
         Icon(
             Icons.Filled.AttachMoney,
@@ -212,7 +215,7 @@ private fun TrackHubCard(footer: String, onTrack: () -> Unit, onSummary: () -> U
                     }
                     Spacer(Modifier.height(14.dp))
                     Text("Track Payout", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Text("Record stakes, odds & payouts", color = Color.White.copy(alpha = 0.88f), fontSize = 12.sp)
+                    Text("Record stakes, odds & payouts", color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp)
                 }
                 Text(footer, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
@@ -224,13 +227,11 @@ private fun TrackHubCard(footer: String, onTrack: () -> Unit, onSummary: () -> U
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 HubMini(
-                    "Summary", "Last 7 & 30 days", Icons.Filled.BarChart,
-                    listOf(Color(0xFF14B8A6), Color(0xFF0B5D7A)),
+                    "Summary", "Last 7 & 30 days", Icons.Filled.BarChart, HubSummaryTint,
                     Modifier.weight(1f).fillMaxWidth(), onSummary
                 )
                 HubMini(
-                    "Brief Report", "Daily progress", Icons.Filled.Description,
-                    listOf(Color(0xFF8B5CF6), Color(0xFF3B1D8F)),
+                    "Brief Report", "Daily progress", Icons.Filled.Description, HubReportTint,
                     Modifier.weight(1f).fillMaxWidth(), onReport
                 )
             }

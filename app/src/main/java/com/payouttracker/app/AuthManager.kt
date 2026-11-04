@@ -83,12 +83,27 @@ class AuthManager(private val ctx: Context, private val scope: CoroutineScope) {
     init {
         if (firebaseReady) {
             val current = FirebaseAuth.getInstance().currentUser
-            val session = prefs.getString("session", null)
-            if (current != null && session != null) {
+            if (current != null) {
+                // The person stays signed in across app updates. If the saved session id is missing
+                // (for example after the app data was cleaned), a new one is created quietly instead
+                // of signing out; the one-device rule still holds because it replaces the old one.
                 user = current.toAuthUser()
-                watchSession(current.uid, session)
-            } else if (current != null) {
-                FirebaseAuth.getInstance().signOut()
+                val saved = prefs.getString("session", null)
+                if (saved != null) {
+                    watchSession(current.uid, saved)
+                } else {
+                    val fresh = UUID.randomUUID().toString()
+                    prefs.edit().putString("session", fresh).apply()
+                    scope.launch {
+                        try {
+                            withTimeout(20000) { registerSession(current, fresh) }
+                        } catch (e: Exception) {
+                            // offline: the write is kept and sent later
+                        } finally {
+                            watchSession(current.uid, fresh)
+                        }
+                    }
+                }
             }
         }
     }

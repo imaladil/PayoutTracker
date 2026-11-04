@@ -42,8 +42,17 @@ main() {
     rm -rf "$SRC/.git"
     find "$SRC" -name '*.jks' -delete
 
+    # Files that belong to this folder only (never part of the zip) and must survive every update.
+    KEEP_FILES="app/google-services.json"
+    BACKUP="$HOME/.payouttracker-keep"
+    mkdir -p "$BACKUP"
+    for k in $KEEP_FILES; do
+      [ -f "$k" ] && cp -f "$k" "$BACKUP/$(basename "$k")"
+    done
+
     # 1) remove files that are tracked here but no longer exist in the new version
     git ls-files -z | while IFS= read -r -d '' f; do
+      case " $KEEP_FILES " in *" $f "*) continue ;; esac
       [ -e "$SRC/$f" ] || rm -f "$f"
     done
     # 2) copy the new version in
@@ -52,6 +61,17 @@ main() {
     if [ -n "$KEEP_CODE" ] && [ -n "$KEEP_NAME" ]; then
       sed -i "s/versionCode = [0-9]*/versionCode = $KEEP_CODE/" "$FILE"
       sed -i "s/versionName = \"[^\"]*\"/versionName = \"$KEEP_NAME\"/" "$FILE"
+    fi
+    # 3b) put the kept files back if anything removed them (a copy is kept in $BACKUP)
+    for k in $KEEP_FILES; do
+      if [ ! -f "$k" ] && [ -f "$BACKUP/$(basename "$k")" ]; then
+        cp -f "$BACKUP/$(basename "$k")" "$k"
+        echo "Restored $k"
+      fi
+    done
+    if [ ! -f app/google-services.json ]; then
+      echo "WARNING: app/google-services.json is missing, so Google login will not work in the next build."
+      echo "See TERMUX.md ('If google-services.json is missing')."
     fi
     # 4) tidy up folders that became empty
     find "$DIR" -type d -empty -not -path "$DIR/.git/*" -not -path "$DIR" -delete 2>/dev/null || true

@@ -9,6 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -90,6 +92,7 @@ fun CodeBox(code: String, modifier: Modifier = Modifier) {
 }
 
 /** One event as a coloured card: sport, tournament, date and time, teams, bet, odds, code. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun EventCard(
     e: BetEvent,
@@ -98,95 +101,141 @@ fun EventCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null
 ) {
-    Row(
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(Brush.linearGradient(colors))
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(14.dp)
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(sportIcon(e.sport), contentDescription = null, tint = White, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(e.sport, color = White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                if (e.tournament.isNotBlank()) {
-                    Text("  •  " + e.tournament, color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp)
-                }
-            }
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(dateTimeText(e.startAt), color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp)
-                if (live) {
-                    Spacer(Modifier.width(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(UnsettledColor)
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text("Unsettled", color = Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        // Top: sport + tournament + date on the left, the Unsettled tag always whole in the top-right corner
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            Column(modifier = Modifier.weight(1f)) {
+                // When the tournament name does not fit next to the sport, it drops to the next line
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(sportIcon(e.sport), contentDescription = null, tint = White, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(e.sport, color = White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                    }
+                    if (e.tournament.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(Color.White.copy(alpha = 0.20f))
+                                .padding(horizontal = 10.dp, vertical = 2.dp)
+                        ) {
+                            Text(e.tournament, color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
+                Spacer(Modifier.height(6.dp))
+                Text(dateTimeText(e.startAt), color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp)
             }
-            Spacer(Modifier.height(8.dp))
-            Text(e.teamA, color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text("vs", color = Color.White.copy(alpha = 0.75f), fontSize = 11.sp)
-            Text(e.teamB, color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(e.bet, color = White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f, fill = false))
+            if (live) {
                 Spacer(Modifier.width(8.dp))
-                Text(e.odds, color = White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(UnsettledColor)
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Text("Unsettled", color = Black, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                }
             }
         }
-        if (e.code.isNotBlank()) {
-            Spacer(Modifier.width(10.dp))
-            CodeBox(e.code, modifier = Modifier.width(104.dp))
+        Spacer(Modifier.height(10.dp))
+        // Bottom: teams, bet and odds on the left, the code box in the bottom-right corner
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(e.teamA, color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text("vs", color = Color.White.copy(alpha = 0.75f), fontSize = 11.sp)
+                Text(e.teamB, color = White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                // Bet and odds are black; a light chip keeps them readable on every card colour
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color.White.copy(alpha = 0.88f))
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(e.bet, color = Black, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f, fill = false))
+                    Spacer(Modifier.width(8.dp))
+                    Text(e.odds, color = Black, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            if (e.code.isNotBlank()) {
+                Spacer(Modifier.width(10.dp))
+                CodeBox(e.code, modifier = Modifier.width(104.dp))
+            }
         }
     }
 }
 
-/** A settled bet in the history list. */
+/** A settled bet in the history list. The unique bet ID sits in the top-right corner (tap to copy). */
 @Composable
 fun ResultRow(e: BetEvent) {
     val won = e.status == "won"
-    Row(
+    val clipboard = LocalClipboardManager.current
+    val ctx = LocalContext.current
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(PanelBg)
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(12.dp)
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(sportIcon(e.sport), contentDescription = null, tint = Gray, modifier = Modifier.size(15.dp))
-                Spacer(Modifier.width(5.dp))
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Icon(sportIcon(e.sport), contentDescription = null, tint = Gray, modifier = Modifier.size(15.dp))
+            Spacer(Modifier.width(5.dp))
+            Text(
+                e.sport + (if (e.tournament.isBlank()) "" else "  •  " + e.tournament),
+                color = Gray, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "ID: " + e.displayId,
+                color = GoldColors[0],
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        clipboard.setText(AnnotatedString(e.displayId))
+                        Toast.makeText(ctx, "Bet ID copied", Toast.LENGTH_SHORT).show()
+                    }
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(e.teamA + "  vs  " + e.teamB, color = White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(e.bet + "  •  " + e.odds, color = White, fontSize = 13.sp)
+                Text(dateTimeText(e.startAt), color = Gray, fontSize = 11.sp)
+            }
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (won) Color(0xFF14391C) else Color(0xFF3A1414))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
                 Text(
-                    e.sport + (if (e.tournament.isBlank()) "" else "  •  " + e.tournament),
-                    color = Gray, fontSize = 12.sp, fontWeight = FontWeight.SemiBold
+                    if (won) "WON" else "LOST",
+                    color = if (won) Green else Red,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
-            Text(e.teamA + "  vs  " + e.teamB, color = White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Text(e.bet + "  •  " + e.odds, color = White, fontSize = 13.sp)
-            Text(dateTimeText(e.startAt), color = Gray, fontSize = 11.sp)
-        }
-        Spacer(Modifier.width(8.dp))
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .background(if (won) Color(0xFF14391C) else Color(0xFF3A1414))
-                .padding(horizontal = 12.dp, vertical = 6.dp)
-        ) {
-            Text(
-                if (won) "WON" else "LOST",
-                color = if (won) Green else Red,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
         }
     }
 }
@@ -273,7 +322,7 @@ fun SearchField(value: String, onChange: (String) -> Unit) {
         value = value,
         onValueChange = onChange,
         singleLine = true,
-        label = { Text("Search results") },
+        label = { Text("Search by team, bet or ID") },
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = Gray) },
         colors = fieldColors(),
         modifier = Modifier.fillMaxWidth()

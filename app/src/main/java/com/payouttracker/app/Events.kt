@@ -50,10 +50,19 @@ data class BetEvent(
     val code: String = "",
     val status: String = "prematch",
     val createdAt: Long = 0L,
-    val settledAt: Long = 0L
+    val settledAt: Long = 0L,
+    val betId: String = ""
 ) {
     val settled: Boolean get() = status == "won" || status == "lost"
+
+    /** The unique bet ID. Older bets without a stored ID get a stable one made from their document id. */
+    val displayId: String get() = betId.ifBlank { id.take(8).uppercase() }
 }
+
+private const val BET_ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+/** 8 characters, no look-alike letters (no 0/O, 1/I). */
+fun newBetId(): String = (1..8).map { BET_ID_CHARS.random() }.joinToString("")
 
 data class StrategyPost(
     val id: String,
@@ -78,7 +87,8 @@ private fun DocumentSnapshot.toEvent(): BetEvent = BetEvent(
     code = getString("code") ?: "",
     status = getString("status") ?: "prematch",
     createdAt = time("createdAt"),
-    settledAt = time("settledAt")
+    settledAt = time("settledAt"),
+    betId = getString("betId") ?: ""
 )
 
 private fun DocumentSnapshot.toPost(): StrategyPost = StrategyPost(
@@ -213,14 +223,34 @@ class EventsRepo(private val ctx: Context) {
             "code" to e.code,
             "status" to e.status
         )
-        val task = if (e.id.isEmpty()) {
-            data["settled"] = false
-            data["createdAt"] = FieldValue.serverTimestamp()
-            db.collection("events").add(data)
+        if (e.id.isEmpty()) {
+            createWithUniqueId(data, 5, onResult)
         } else {
+            // editing keeps the bet ID that was given when the bet was created
             db.collection("events").document(e.id).update(data)
+                .addOnCompleteListener { onResult(it.isSuccessful) }
         }
-        task.addOnCompleteListener { onResult(it.isSuccessful) }
+    }
+
+    /** A new bet gets a unique bet ID, which is also its document id; a taken ID is never reused. */
+    private fun createWithUniqueId(data: HashMap<String, Any>, tries: Int, onResult: (Boolean) -> Unit) {
+        val betId = newBetId()
+        val ref = db.collection("events").document(betId)
+        db.runTransaction { tx ->
+            if (tx.get(ref).exists()) throw IllegalStateException("taken")
+            val doc = HashMap(data)
+            doc["betId"] = betId
+            doc["settled"] = false
+            doc["createdAt"] = FieldValue.serverTimestamp()
+            tx.set(ref, doc)
+            null
+        }.addOnCompleteListener {
+            when {
+                it.isSuccessful -> onResult(true)
+                tries > 1 && (it.exception is IllegalStateException || it.exception?.cause is IllegalStateException) -> createWithUniqueId(data, tries - 1, onResult)
+                else -> onResult(false)
+            }
+        }
     }
 
     fun setStatus(id: String, status: String, onResult: (Boolean) -> Unit) {
@@ -262,11 +292,11 @@ class EventsRepo(private val ctx: Context) {
     }
 }
 
-/** Every word of [query] must appear somewhere in the event's text. */
+/** Every word of [query] must appear somewhere in the event's text, including its unique bet ID. */
 fun BetEvent.matches(query: String): Boolean {
-    val words = query.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+    val words = query.trim().lowercase().replace("#", "").split(Regex("\\s+")).filter { it.isNotEmpty() }
     if (words.isEmpty()) return true
-    val text = listOf(sport, tournament, teamA, teamB, bet, odds, code, status)
+    val text = listOf(sport, tournament, teamA, teamB, bet, odds, code, status, displayId)
         .joinToString(" ").lowercase()
     return words.all { text.contains(it) }
 }
