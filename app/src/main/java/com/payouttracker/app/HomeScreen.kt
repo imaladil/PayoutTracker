@@ -404,14 +404,14 @@ fun HomeScreen(
             EmptyCard("No live events right now.", LiveColors, onLive)
         } else {
             live.take(2).forEach { e ->
-                EventCard(e, LiveColors, true, onClick = onLive)
+                EventCard(e, LiveColors, true, now = repo.now, onClick = onLive)
                 Spacer(Modifier.height(10.dp))
             }
         }
 
         // ---- Pre-Match ----
         val pre = repo.preMatchEvents
-        SectionHeader("Pre-Match", Color(0xFF8C9EFF), if (access.canView) pre.size else null, false, onPreMatch)
+        SectionHeader("Pre-Match", Color(0xFF8C9EFF), if (access.canView) pre.size else null, false, onPreMatch, clock = true)
         if (user == null) {
             LockedBox("Pre-Match", PreMatchColors, onLogin)
         } else if (!access.canView) {
@@ -420,7 +420,7 @@ fun HomeScreen(
             EmptyCard("No upcoming events.", PreMatchColors, onPreMatch)
         } else {
             pre.take(2).forEach { e ->
-                EventCard(e, PreMatchColors, false, onClick = onPreMatch)
+                EventCard(e, PreMatchColors, false, now = repo.now, onClick = onPreMatch)
                 Spacer(Modifier.height(10.dp))
             }
         }

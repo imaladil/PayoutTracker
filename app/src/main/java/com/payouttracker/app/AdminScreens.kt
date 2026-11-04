@@ -11,6 +11,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -27,6 +28,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -41,13 +45,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -237,10 +244,21 @@ fun AdminScreen(
                         .background(PanelBg)
                         .padding(12.dp)
                 ) {
-                    Text(effective, color = tagColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Text(e.teamA + " vs " + e.teamB, color = White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Text(e.sport + "  •  " + e.tournament, color = Gray, fontSize = 12.sp)
-                    Text(e.bet + "  •  " + e.odds + "  •  " + dateTimeText(e.startAt), color = Gray, fontSize = 12.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        BetTypeTag(e.isMulti)
+                        Spacer(Modifier.width(8.dp))
+                        Text(effective, color = tagColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                    if (e.isMulti) {
+                        e.legs.forEach { g ->
+                            Text(g.teamA + " vs " + g.teamB + "  •  " + g.bet + "  •  " + g.odds, color = White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                        Text("Number of Events: " + e.legs.size + "  •  Total Odds: " + e.odds + "  •  " + dateTimeText(e.startAt), color = Gray, fontSize = 12.sp)
+                    } else {
+                        Text(e.teamA + " vs " + e.teamB, color = White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text(e.sport + "  •  " + e.tournament, color = Gray, fontSize = 12.sp)
+                        Text(e.bet + "  •  " + e.odds + "  •  " + dateTimeText(e.startAt), color = Gray, fontSize = 12.sp)
+                    }
                     Row {
                         if (!e.settled) {
                             if (effective == "PRE-MATCH") {
@@ -287,7 +305,7 @@ fun AdminScreen(
             titleContentColor = White,
             textContentColor = White,
             title = { Text("Delete event?") },
-            text = { Text(ev.teamA + " vs " + ev.teamB) },
+            text = { Text(ev.title) },
             confirmButton = {
                 TextButton(onClick = {
                     repo.deleteEvent(ev.id, ::result)
@@ -329,7 +347,164 @@ private fun FormField(label: String, value: String, onChange: (String) -> Unit, 
     )
 }
 
-/** Add a new event, or edit an existing one when [initial] is given. */
+/** The form values of one game. A single bet has one of these, a multi bet two or more. */
+private class LegDraft(l: Leg?) {
+    var sport by mutableStateOf(l?.sport ?: SPORTS[0].first)
+    var tournament by mutableStateOf(l?.tournament ?: "")
+    var teamA by mutableStateOf(l?.teamA ?: "")
+    var teamB by mutableStateOf(l?.teamB ?: "")
+    var bet by mutableStateOf(l?.bet ?: "")
+    var odds by mutableStateOf(l?.odds ?: "")
+    var startAt by mutableLongStateOf(l?.startAt ?: (System.currentTimeMillis() + 3600_000L))
+
+    fun toLeg() = Leg(sport, tournament.trim(), teamA.trim(), teamB.trim(), startAt, bet.trim(), odds.trim())
+    fun complete() = teamA.isNotBlank() && teamB.isNotBlank() && bet.isNotBlank() && odds.isNotBlank()
+}
+
+/** A text box that lists earlier entries matching what is typed; tapping one fills the box. */
+@Composable
+private fun SuggestField(label: String, value: String, onChange: (String) -> Unit, options: List<String>) {
+    var focused by remember { mutableStateOf(false) }
+    val q = value.trim().lowercase()
+    val matches = if (focused && q.isNotEmpty()) {
+        options.filter { it.lowercase().contains(q) && !it.equals(value.trim(), ignoreCase = true) }
+            .sortedByDescending { it.lowercase().startsWith(q) }
+            .take(5)
+    } else emptyList()
+    Column(modifier = Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onChange,
+            label = { Text(label) },
+            singleLine = true,
+            colors = fieldColors(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { focused = it.isFocused }
+        )
+        if (matches.isNotEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFF1E1E1E))
+            ) {
+                matches.forEach { m ->
+                    Text(
+                        m, color = White, fontSize = 14.sp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onChange(m) }
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** All the fields of one game. */
+@Composable
+private fun LegForm(
+    d: LegDraft,
+    heading: String?,
+    teams: List<String>,
+    tournaments: List<String>,
+    bets: List<String>,
+    onRemove: (() -> Unit)?
+) {
+    val ctx = LocalContext.current
+    var sportMenu by remember { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (heading != null) PanelBg else Color.Transparent)
+            .padding(if (heading != null) 12.dp else 0.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        if (heading != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(heading, color = MultiTagColor, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                if (onRemove != null) {
+                    TextButton(onClick = onRemove) {
+                        Icon(Icons.Filled.Delete, contentDescription = null, tint = Red)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Remove", color = Red)
+                    }
+                }
+            }
+        }
+        Text("Sport", color = Gray, fontSize = 12.sp)
+        androidx.compose.foundation.layout.Box {
+            OutlinedButton(onClick = { sportMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                Icon(sportIcon(d.sport), contentDescription = null, tint = Green)
+                Spacer(Modifier.width(8.dp))
+                Text(d.sport, color = White, modifier = Modifier.weight(1f))
+            }
+            DropdownMenu(expanded = sportMenu, onDismissRequest = { sportMenu = false }) {
+                SPORTS.forEach { (name, icon) ->
+                    DropdownMenuItem(
+                        text = { Text(name) },
+                        leadingIcon = { Icon(icon, contentDescription = null) },
+                        onClick = {
+                            d.sport = name
+                            sportMenu = false
+                        }
+                    )
+                }
+            }
+        }
+        SuggestField("Tournament (for example US Open)", d.tournament, { d.tournament = it }, tournaments)
+        SuggestField("Team / player 1", d.teamA, { d.teamA = it }, teams)
+        SuggestField("Team / player 2", d.teamB, { d.teamB = it }, teams)
+
+        Text("Date and time", color = Gray, fontSize = 12.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(
+                onClick = {
+                    val c = Calendar.getInstance().apply { timeInMillis = d.startAt }
+                    DatePickerDialog(ctx, { _, y, m, day ->
+                        val n = Calendar.getInstance().apply {
+                            timeInMillis = d.startAt
+                            set(y, m, day)
+                        }
+                        d.startAt = n.timeInMillis
+                    }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
+                },
+                modifier = Modifier.weight(1f)
+            ) { Text(dateTimeText(d.startAt).substringBefore(","), color = White) }
+            OutlinedButton(
+                onClick = {
+                    val c = Calendar.getInstance().apply { timeInMillis = d.startAt }
+                    TimePickerDialog(ctx, { _, h, min ->
+                        val n = Calendar.getInstance().apply {
+                            timeInMillis = d.startAt
+                            set(Calendar.HOUR_OF_DAY, h)
+                            set(Calendar.MINUTE, min)
+                            set(Calendar.SECOND, 0)
+                        }
+                        d.startAt = n.timeInMillis
+                    }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), false).show()
+                },
+                modifier = Modifier.weight(1f)
+            ) { Text(timeText(d.startAt), color = White) }
+        }
+
+        SuggestField("Bet (for example Total Sets 3.5 Over)", d.bet, { d.bet = it }, bets)
+        OutlinedTextField(
+            value = d.odds,
+            onValueChange = { d.odds = it },
+            label = { Text("Odds") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            colors = fieldColors(),
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+/** Add a new event, or edit an existing one when [initial] is given. Single bet or multi bet. */
 @Composable
 fun EventEditorScreen(
     initial: BetEvent?,
@@ -338,18 +513,23 @@ fun EventEditorScreen(
     onMenu: () -> Unit
 ) {
     val ctx = LocalContext.current
-    var sport by remember { mutableStateOf(initial?.sport ?: SPORTS[0].first) }
-    var tournament by remember { mutableStateOf(initial?.tournament ?: "") }
-    var teamA by remember { mutableStateOf(initial?.teamA ?: "") }
-    var teamB by remember { mutableStateOf(initial?.teamB ?: "") }
-    var bet by remember { mutableStateOf(initial?.bet ?: "") }
-    var odds by remember { mutableStateOf(initial?.odds ?: "") }
+    val store = remember { SuggestStore(ctx) }
+    val all = repo.allEvents
+    val teams = remember(all) { store.teams(all) }
+    val tournaments = remember(all) { store.tournaments(all) }
+    val bets = remember(all) { store.bets(all) }
+
+    val legs = remember {
+        mutableStateListOf<LegDraft>().also { l ->
+            if (initial == null) l.add(LegDraft(null)) else initial.games.forEach { l.add(LegDraft(it)) }
+        }
+    }
+    var multi by remember { mutableStateOf(initial?.isMulti == true) }
     var code by remember { mutableStateOf(initial?.code ?: "") }
     var status by remember { mutableStateOf(if (initial?.status == "live") "live" else "prematch") }
-    var startAt by remember {
-        mutableLongStateOf(initial?.startAt ?: (System.currentTimeMillis() + 3600_000L))
-    }
-    var sportMenu by remember { mutableStateOf(false) }
+
+    val shown = if (multi) legs.toList() else legs.take(1)
+    val total = totalOddsOf(shown.map { it.odds })
 
     Column(modifier = Modifier.fillMaxSize()) {
         AppTopBar(if (initial == null) "Add Event" else "Edit Event", onBack, onMenu)
@@ -360,65 +540,64 @@ fun EventEditorScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text("Sport", color = Gray, fontSize = 12.sp)
-            androidx.compose.foundation.layout.Box {
-                OutlinedButton(onClick = { sportMenu = true }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(sportIcon(sport), contentDescription = null, tint = Green)
-                    Spacer(Modifier.width(8.dp))
-                    Text(sport, color = White, modifier = Modifier.weight(1f))
-                }
-                DropdownMenu(expanded = sportMenu, onDismissRequest = { sportMenu = false }) {
-                    SPORTS.forEach { (name, icon) ->
-                        DropdownMenuItem(
-                            text = { Text(name) },
-                            leadingIcon = { Icon(icon, contentDescription = null) },
-                            onClick = {
-                                sport = name
-                                sportMenu = false
-                            }
-                        )
-                    }
-                }
-            }
-            FormField("Tournament (for example US Open)", tournament, { tournament = it })
-            FormField("Team / player 1", teamA, { teamA = it })
-            FormField("Team / player 2", teamB, { teamB = it })
-
-            Text("Date and time", color = Gray, fontSize = 12.sp)
+            Text("Bet type", color = Gray, fontSize = 12.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(
-                    onClick = {
-                        val c = Calendar.getInstance().apply { timeInMillis = startAt }
-                        DatePickerDialog(ctx, { _, y, m, d ->
-                            val n = Calendar.getInstance().apply {
-                                timeInMillis = startAt
-                                set(y, m, d)
-                            }
-                            startAt = n.timeInMillis
-                        }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
-                    },
+                Button(
+                    onClick = { multi = false },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (!multi) SingleTagColor else PanelBg,
+                        contentColor = if (!multi) Black else White
+                    ),
                     modifier = Modifier.weight(1f)
-                ) { Text(dateTimeText(startAt).substringBefore(","), color = White) }
-                OutlinedButton(
+                ) { Text("Single", fontWeight = FontWeight.Bold) }
+                Button(
                     onClick = {
-                        val c = Calendar.getInstance().apply { timeInMillis = startAt }
-                        TimePickerDialog(ctx, { _, h, min ->
-                            val n = Calendar.getInstance().apply {
-                                timeInMillis = startAt
-                                set(Calendar.HOUR_OF_DAY, h)
-                                set(Calendar.MINUTE, min)
-                                set(Calendar.SECOND, 0)
-                            }
-                            startAt = n.timeInMillis
-                        }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), false).show()
+                        multi = true
+                        while (legs.size < 2) legs.add(LegDraft(null))
                     },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (multi) MultiTagColor else PanelBg,
+                        contentColor = if (multi) Black else White
+                    ),
                     modifier = Modifier.weight(1f)
-                ) { Text(timeText(startAt), color = White) }
+                ) { Text("Multi", fontWeight = FontWeight.Bold) }
             }
 
-            FormField("Bet (for example Total Sets 3.5 Over)", bet, { bet = it })
-            FormField("Odds", odds, { odds = it })
-            FormField("1x code (optional)", code, { code = it })
+            shown.forEachIndexed { i, d ->
+                key(d) {
+                    LegForm(
+                        d = d,
+                        heading = if (multi) "Event " + (i + 1) else null,
+                        teams = teams,
+                        tournaments = tournaments,
+                        bets = bets,
+                        onRemove = if (multi && legs.size > 2) ({ legs.remove(d) }) else null
+                    )
+                }
+            }
+
+            if (multi) {
+                OutlinedButton(onClick = { legs.add(LegDraft(null)) }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.Add, contentDescription = null, tint = MultiTagColor)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Add another event", color = White)
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(PanelBg)
+                        .padding(12.dp)
+                ) {
+                    Text("Number of Events: " + shown.size, color = White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Total Odds: " + (total ?: "enter every odds as a number"),
+                        color = if (total != null) Green else Gray, fontSize = 16.sp, fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            FormField(if (multi) "1x code for the whole multi (optional)" else "1x code (optional)", code, { code = it })
 
             Text("Show in", color = Gray, fontSize = 12.sp)
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -437,24 +616,47 @@ fun EventEditorScreen(
                 )
                 Text("Live now", color = White, fontSize = 14.sp)
             }
+            if (multi) {
+                Text("A multi bet goes live when its first event starts.", color = Gray, fontSize = 12.sp)
+            }
 
             Button(
                 onClick = {
-                    if (teamA.isBlank() || teamB.isBlank() || bet.isBlank() || odds.isBlank()) {
-                        ctx.toast("Fill in both teams, the bet and the odds.")
+                    if (shown.any { !it.complete() }) {
+                        ctx.toast("Fill in both teams, the bet and the odds of every event.")
+                    } else if (multi && total == null) {
+                        ctx.toast("Odds must be numbers, like 1.85.")
                     } else {
-                        val e = BetEvent(
-                            id = initial?.id ?: "",
-                            sport = sport,
-                            tournament = tournament.trim(),
-                            teamA = teamA.trim(),
-                            teamB = teamB.trim(),
-                            startAt = startAt,
-                            bet = bet.trim(),
-                            odds = odds.trim(),
-                            code = code.trim(),
-                            status = status
-                        )
+                        val first = shown[0].toLeg()
+                        val e = if (multi) {
+                            BetEvent(
+                                id = initial?.id ?: "",
+                                sport = first.sport,
+                                tournament = first.tournament,
+                                teamA = first.teamA,
+                                teamB = first.teamB,
+                                startAt = shown.minOf { it.startAt },
+                                bet = "Multi (" + shown.size + " events)",
+                                odds = total ?: "",
+                                code = code.trim(),
+                                status = status,
+                                legs = shown.map { it.toLeg() }
+                            )
+                        } else {
+                            BetEvent(
+                                id = initial?.id ?: "",
+                                sport = first.sport,
+                                tournament = first.tournament,
+                                teamA = first.teamA,
+                                teamB = first.teamB,
+                                startAt = first.startAt,
+                                bet = first.bet,
+                                odds = first.odds,
+                                code = code.trim(),
+                                status = status
+                            )
+                        }
+                        store.remember(e)
                         repo.saveEvent(e) { ok ->
                             if (!ok) ctx.toast("Could not save the event.")
                         }

@@ -21,11 +21,11 @@ import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import java.util.Date
 
-/** The sports an event can belong to. Table Tennis shares the tennis icon. */
+/** The sports an event can belong to. Tennis is a ball; Table Tennis keeps the racket icon. */
 val SPORTS: List<Pair<String, ImageVector>> = listOf(
     "Cricket" to Icons.Filled.SportsCricket,
     "Football" to Icons.Filled.SportsSoccer,
-    "Tennis" to Icons.Filled.SportsTennis,
+    "Tennis" to TennisBallIcon,
     "Table Tennis" to Icons.Filled.SportsTennis,
     "Basketball" to Icons.Filled.SportsBasketball,
     "Volleyball" to Icons.Filled.SportsVolleyball
@@ -33,6 +33,28 @@ val SPORTS: List<Pair<String, ImageVector>> = listOf(
 
 fun sportIcon(name: String): ImageVector =
     SPORTS.firstOrNull { it.first.equals(name, ignoreCase = true) }?.second ?: Icons.Filled.SportsSoccer
+
+/** One game inside a multi bet. */
+data class Leg(
+    val sport: String = "Cricket",
+    val tournament: String = "",
+    val teamA: String = "",
+    val teamB: String = "",
+    val startAt: Long = 0L,
+    val bet: String = "",
+    val odds: String = ""
+)
+
+/** Odds typed as text, "1.85" or "1,85"; null when it is not a number. */
+fun parseOdds(text: String): Double? = text.trim().replace(',', '.').toDoubleOrNull()
+
+/** All odds multiplied together, shown with 2 decimals; null if any of them is not a number. */
+fun totalOddsOf(odds: List<String>): String? {
+    if (odds.isEmpty()) return null
+    var t = 1.0
+    for (o in odds) t *= parseOdds(o)?.takeIf { it > 0 } ?: return null
+    return String.format(java.util.Locale.US, "%.2f", t)
+}
 
 /**
  * One bet. [status] is "prematch", "live", "won" or "lost". A prematch event whose start time has
@@ -51,8 +73,19 @@ data class BetEvent(
     val status: String = "prematch",
     val createdAt: Long = 0L,
     val settledAt: Long = 0L,
-    val betId: String = ""
+    val betId: String = "",
+    /** Two or more games make this a multi bet; empty for a single bet. */
+    val legs: List<Leg> = emptyList()
 ) {
+    val isMulti: Boolean get() = legs.size >= 2
+
+    /** The games of this bet: the legs of a multi bet, or the one game of a single bet. */
+    val games: List<Leg>
+        get() = if (isMulti) legs else listOf(Leg(sport, tournament, teamA, teamB, startAt, bet, odds))
+
+    /** Short text for notifications. */
+    val title: String get() = if (isMulti) "Multi bet (" + legs.size + " events)" else teamA + " vs " + teamB
+
     val settled: Boolean get() = status == "won" || status == "lost"
 
     /** The unique bet ID. Older bets without a stored ID get a stable one made from their document id. */
@@ -88,8 +121,25 @@ private fun DocumentSnapshot.toEvent(): BetEvent = BetEvent(
     status = getString("status") ?: "prematch",
     createdAt = time("createdAt"),
     settledAt = time("settledAt"),
-    betId = getString("betId") ?: ""
+    betId = getString("betId") ?: "",
+    legs = readLegs()
 )
+
+@Suppress("UNCHECKED_CAST")
+private fun DocumentSnapshot.readLegs(): List<Leg> {
+    val raw = get("legs") as? List<Map<String, Any?>> ?: return emptyList()
+    return raw.map { m ->
+        Leg(
+            sport = m["sport"] as? String ?: "",
+            tournament = m["tournament"] as? String ?: "",
+            teamA = m["teamA"] as? String ?: "",
+            teamB = m["teamB"] as? String ?: "",
+            startAt = (m["startAt"] as? Timestamp)?.toDate()?.time ?: 0L,
+            bet = m["bet"] as? String ?: "",
+            odds = m["odds"] as? String ?: ""
+        )
+    }
+}
 
 private fun DocumentSnapshot.toPost(): StrategyPost = StrategyPost(
     id = id,
@@ -167,9 +217,9 @@ class EventsRepo(private val ctx: Context) {
             for (e in list) {
                 val before = known[e.id]
                 if (before == null) {
-                    Notifier.show(ctx, "New event", e.teamA + " vs " + e.teamB + " (" + e.sport + ")")
+                    Notifier.show(ctx, "New event", if (e.isMulti) e.title else e.title + " (" + e.sport + ")")
                 } else if (before != "live" && e.status == "live" && e.id !in liveSeen) {
-                    Notifier.show(ctx, "Now live", e.teamA + " vs " + e.teamB)
+                    Notifier.show(ctx, "Now live", e.title)
                 }
             }
         }
@@ -185,7 +235,7 @@ class EventsRepo(private val ctx: Context) {
         for (e in open) {
             if (e.status == "prematch" && e.startAt in 1..now && e.id !in liveSeen) {
                 liveSeen.add(e.id)
-                Notifier.show(ctx, "Now live", e.teamA + " vs " + e.teamB)
+                Notifier.show(ctx, "Now live", e.title)
             }
         }
     }
@@ -202,6 +252,9 @@ class EventsRepo(private val ctx: Context) {
     val unsettled: Int get() = open.size
     val won: Int get() = settled.count { it.status == "won" }
     val lost: Int get() = settled.count { it.status == "lost" }
+
+    /** Won out of all settled bets, as a whole percentage; 0 when nothing is settled yet. */
+    val successRate: Int get() = if (won + lost == 0) 0 else Math.round(won * 100f / (won + lost))
 
     /** Admin only: every event, newest start first. */
     val allEvents: List<BetEvent>
@@ -221,7 +274,19 @@ class EventsRepo(private val ctx: Context) {
             "bet" to e.bet,
             "odds" to e.odds,
             "code" to e.code,
-            "status" to e.status
+            "status" to e.status,
+            "multi" to e.isMulti,
+            "legs" to e.legs.map { l ->
+                hashMapOf<String, Any>(
+                    "sport" to l.sport,
+                    "tournament" to l.tournament,
+                    "teamA" to l.teamA,
+                    "teamB" to l.teamB,
+                    "startAt" to Timestamp(Date(l.startAt)),
+                    "bet" to l.bet,
+                    "odds" to l.odds
+                )
+            }
         )
         if (e.id.isEmpty()) {
             createWithUniqueId(data, 5, onResult)
@@ -296,7 +361,45 @@ class EventsRepo(private val ctx: Context) {
 fun BetEvent.matches(query: String): Boolean {
     val words = query.trim().lowercase().replace("#", "").split(Regex("\\s+")).filter { it.isNotEmpty() }
     if (words.isEmpty()) return true
-    val text = listOf(sport, tournament, teamA, teamB, bet, odds, code, status, displayId)
+    val text = (listOf(sport, tournament, teamA, teamB, bet, odds, code, status, displayId) +
+        legs.flatMap { listOf(it.sport, it.tournament, it.teamA, it.teamB, it.bet, it.odds) } +
+        (if (isMulti) listOf("multi") else listOf("single")))
         .joinToString(" ").lowercase()
     return words.all { text.contains(it) }
+}
+
+
+/**
+ * Everything typed into the event form before: tournaments, teams or players, and bets.
+ * They come from every event still in the database plus a copy kept on this phone, so a name
+ * stays available after its event is deleted.
+ */
+class SuggestStore(ctx: Context) {
+    private val prefs = ctx.getSharedPreferences("suggest", Context.MODE_PRIVATE)
+
+    private fun saved(kind: String): Set<String> = prefs.getStringSet(kind, emptySet()) ?: emptySet()
+
+    fun remember(e: BetEvent) {
+        val teams = saved("team").toMutableSet()
+        val tours = saved("tournament").toMutableSet()
+        val bets = saved("bet").toMutableSet()
+        for (g in e.games) {
+            listOf(g.teamA, g.teamB).filter { it.isNotBlank() }.forEach { teams.add(it) }
+            if (g.tournament.isNotBlank()) tours.add(g.tournament)
+            if (g.bet.isNotBlank()) bets.add(g.bet)
+        }
+        prefs.edit().putStringSet("team", teams).putStringSet("tournament", tours).putStringSet("bet", bets).apply()
+    }
+
+    fun teams(all: List<BetEvent>): List<String> =
+        (saved("team") + all.flatMap { ev -> ev.games.flatMap { listOf(it.teamA, it.teamB) } }).clean()
+
+    fun tournaments(all: List<BetEvent>): List<String> =
+        (saved("tournament") + all.flatMap { ev -> ev.games.map { it.tournament } }).clean()
+
+    fun bets(all: List<BetEvent>): List<String> =
+        (saved("bet") + all.flatMap { ev -> ev.games.map { it.bet } }).clean()
+
+    private fun Collection<String>.clean(): List<String> =
+        map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }.sortedBy { it.lowercase() }
 }
