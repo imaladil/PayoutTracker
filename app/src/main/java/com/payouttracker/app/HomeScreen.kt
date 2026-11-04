@@ -1,6 +1,12 @@
 package com.payouttracker.app
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +43,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,8 +51,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import java.util.Locale
 
 @Composable
@@ -115,6 +124,120 @@ fun HomeBox(
     }
 }
 
+/** A small glass-like panel inside the Track Payout card. */
+@Composable
+private fun HubMini(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    colors: List<Color>,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(20.dp)
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(Brush.linearGradient(colors))
+            .border(1.dp, Color.White.copy(alpha = 0.30f), shape)
+            .clickable(onClick = onClick)
+            .padding(12.dp)
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.14f),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .size(54.dp)
+        )
+        Column(modifier = Modifier.align(Alignment.CenterStart)) {
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.25f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = Color.White.copy(alpha = 0.85f), fontSize = 10.sp)
+        }
+    }
+}
+
+/**
+ * Track Payout with Summary (top right) and Brief Report (bottom right) inside the same card.
+ * The left part opens Track Payout; each panel on the right opens its own page.
+ */
+@Composable
+private fun TrackHubCard(footer: String, onTrack: () -> Unit, onSummary: () -> Unit, onReport: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(240.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .background(
+                Brush.linearGradient(listOf(Color(0xFFFFB300), Color(0xFFF57C00), Color(0xFFB23A00)))
+            )
+    ) {
+        Icon(
+            Icons.Filled.AttachMoney,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.10f),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .size(170.dp)
+        )
+        Row(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clickable(onClick = onTrack)
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.25f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.AttachMoney, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Text("Track Payout", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Text("Record stakes, odds & payouts", color = Color.White.copy(alpha = 0.88f), fontSize = 12.sp)
+                }
+                Text(footer, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Column(
+                modifier = Modifier
+                    .width(158.dp)
+                    .fillMaxHeight()
+                    .padding(top = 12.dp, bottom = 12.dp, end = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                HubMini(
+                    "Summary", "Last 7 & 30 days", Icons.Filled.BarChart,
+                    listOf(Color(0xFF14B8A6), Color(0xFF0B5D7A)),
+                    Modifier.weight(1f).fillMaxWidth(), onSummary
+                )
+                HubMini(
+                    "Brief Report", "Daily progress", Icons.Filled.Description,
+                    listOf(Color(0xFF8B5CF6), Color(0xFF3B1D8F)),
+                    Modifier.weight(1f).fillMaxWidth(), onReport
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun HomeScreen(
     state: TrackerState,
@@ -136,6 +259,9 @@ fun HomeScreen(
     onStrategy: () -> Unit,
     onStrategyPost: (String) -> Unit,
     onAdmin: () -> Unit,
+    onProfile: () -> Unit,
+    welcome: Boolean,
+    onWelcomeDone: () -> Unit,
     onMenu: () -> Unit
 ) {
     var query by remember { mutableStateOf("") }
@@ -156,9 +282,10 @@ fun HomeScreen(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("Payout Tracker", color = White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-                Text("Track • Analyze • Reach your target", color = Gray, fontSize = 13.sp)
+                Text("Track • Reach your target", color = Gray, fontSize = 13.sp)
             }
             if (user != null) MailButton(unread, onMailbox)
+            ProfileButton(user, onProfile)
             IconButton(onClick = onMenu) {
                 Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = White)
             }
@@ -166,21 +293,45 @@ fun HomeScreen(
 
         Spacer(Modifier.height(12.dp))
 
-        if (user == null) {
-            // Not signed in: Sign Up and Login both lead to the login page
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = onLogin,
-                    colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Black),
-                    modifier = Modifier.weight(1f)
-                ) { Text("Sign Up", fontWeight = FontWeight.Bold) }
-                OutlinedButton(
-                    onClick = onLogin,
-                    modifier = Modifier.weight(1f)
-                ) { Text("Login", color = Green, fontWeight = FontWeight.Bold) }
+        // A short welcome strip after signing in; it fades away and the space closes up
+        LaunchedEffect(welcome) {
+            if (welcome) {
+                delay(3500)
+                onWelcomeDone()
             }
+        }
+        AnimatedVisibility(
+            visible = welcome && user != null,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Brush.horizontalGradient(listOf(Color(0xFF0F9D58), Color(0xFF2ECC71))))
+                    .padding(vertical = 14.dp, horizontal = 16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "Signed in as " + (user?.email ?: ""),
+                    color = Color.Black,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+
+        if (user == null) {
+            // Sign Up and Login are the same step: continue with Google
+            Button(
+                onClick = onLogin,
+                colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Black),
+                modifier = Modifier.fillMaxWidth().height(48.dp)
+            ) { Text("Continue with Google", fontWeight = FontWeight.Bold, fontSize = 15.sp) }
         } else {
-            Text("Signed in as " + user.email, color = Gray, fontSize = 12.sp)
             if (!user.isAdmin) {
                 Spacer(Modifier.height(8.dp))
                 if (access.premium) {
@@ -274,48 +425,7 @@ fun HomeScreen(
 
         Spacer(Modifier.height(10.dp))
 
-        HomeBox(
-            title = "Track Payout",
-            subtitle = "Record stakes, odds & payouts",
-            icon = Icons.Filled.AttachMoney,
-            colors = GoldColors,
-            big = true,
-            footer = footer,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(190.dp),
-            onClick = onTrack
-        )
-
-        Spacer(Modifier.height(14.dp))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(150.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            HomeBox(
-                title = "Summary",
-                subtitle = "Last 7 & 30 days",
-                icon = Icons.Filled.BarChart,
-                colors = SummaryColors,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                onClick = onSummary
-            )
-            HomeBox(
-                title = "Brief Report",
-                subtitle = "Daily progress",
-                icon = Icons.Filled.Description,
-                colors = ReportColors,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                onClick = onReport
-            )
-        }
+        TrackHubCard(footer = footer, onTrack = onTrack, onSummary = onSummary, onReport = onReport)
 
         Spacer(Modifier.height(14.dp))
 

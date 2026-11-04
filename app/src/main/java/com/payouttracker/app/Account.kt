@@ -97,7 +97,7 @@ data class PayMethod(val key: String, val label: String, val color: Color)
 
 val METHODS = listOf(
     PayMethod("bkash", "bKash", Color(0xFFE2136E)),
-    PayMethod("nagad", "Nagad", Color(0xFFF6921E)),
+    PayMethod("nagad", "Nagad", Color(0xFFE8312A)),
     PayMethod("rocket", "Rocket", Color(0xFF8C3494))
 )
 

@@ -9,6 +9,17 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.ui.draw.blur
@@ -105,6 +116,7 @@ fun AppRoot(onExit: () -> Unit) {
     val uriHandler = LocalUriHandler.current
     val lastBackAt = remember { longArrayOf(0L) }
     var contactExpanded by remember { mutableStateOf(false) }
+    var showProfile by remember { mutableStateOf(false) }
 
     // Sign-in (Gmail, one device at a time) and the forced-update gate
     val auth = remember { AuthManager(ctx.applicationContext, scope) }
@@ -240,85 +252,111 @@ fun AppRoot(onExit: () -> Unit) {
                 drawerContainerColor = Color(0xFF0E0E0E),
                 drawerContentColor = White
             ) {
-                Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp)) {
-                    Text("Payout Tracker", color = White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    Text("Menu", color = Gray, fontSize = 13.sp)
-                }
-                Divider(color = LineColor)
-                Spacer(Modifier.height(8.dp))
-                MenuItem("Home", Icons.Filled.Home, White, current.screen == Screen.Home) { goHome() }
-                MenuItem("Live", Icons.Filled.FiberManualRecord, Green, current.screen == Screen.Live) {
-                    push(Route(Screen.Live))
-                }
-                MenuItem("Pre-Match", Icons.Filled.Schedule, PreMatchColors[0], current.screen == Screen.PreMatch) {
-                    push(Route(Screen.PreMatch))
-                }
-                MenuItem("Results", Icons.Filled.EmojiEvents, GoldColors[0], current.screen == Screen.Results) {
-                    push(Route(Screen.Results))
-                }
-                MenuItem(
-                    "Strategy", Icons.Filled.Lightbulb, StrategyColors[0],
-                    current.screen == Screen.Strategy || current.screen == Screen.StrategyPost
-                ) { push(Route(Screen.Strategy)) }
-                MenuItem(
-                    "Track Payout", Icons.Filled.AttachMoney, GoldColors[0],
-                    current.screen == Screen.Targets || current.screen == Screen.Detail
-                ) { push(Route(Screen.Targets)) }
-                MenuItem(
-                    "Summary", Icons.Filled.BarChart, SummaryColors[0],
-                    current.screen == Screen.Summary || current.screen == Screen.SummaryDetail
-                ) { push(Route(Screen.Summary)) }
-                MenuItem(
-                    "Brief Report", Icons.Filled.Description, ReportColors[0],
-                    current.screen == Screen.Report || current.screen == Screen.ReportDetail
-                ) { push(Route(Screen.Report)) }
-
-                MenuItem("Contact Us", Icons.Filled.SupportAgent, UpdateColors[0], current.screen == Screen.Contact) {
-                    closeDrawer()
-                    openContact()
-                }
-                MenuItem("Telegram", Icons.AutoMirrored.Filled.Send, MessageColors[0], false) {
-                    openLink(LINK_TELEGRAM)
-                }
-                if (auth.user != null) {
-                    MenuItem("Mailbox", Icons.Filled.Email, Green, current.screen == Screen.Mailbox) {
-                        push(Route(Screen.Mailbox))
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    val me = auth.user
+                    Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp)) {
+                        Text("Payout Tracker", color = White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        Text("Menu", color = Gray, fontSize = 13.sp)
+                        Spacer(Modifier.height(16.dp))
+                        if (me == null) {
+                            Button(
+                                onClick = {
+                                    closeDrawer()
+                                    openLogin()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Black),
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Continue with Google", fontWeight = FontWeight.Bold) }
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Avatar(me.name.ifBlank { me.email }, 46.dp)
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        me.name.ifBlank { me.email },
+                                        color = White, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        me.email,
+                                        color = Gray, fontSize = 12.sp,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    closeDrawer()
+                                    auth.logout()
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Filled.PowerSettingsNew, contentDescription = null, tint = Red, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Log Out", color = Red, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
-                    if (!isAdmin) {
+                    Divider(color = LineColor)
+                    Spacer(Modifier.height(8.dp))
+                    MenuItem("Home", Icons.Filled.Home, White, current.screen == Screen.Home) { goHome() }
+                    MenuItem("Live", Icons.Filled.FiberManualRecord, Green, current.screen == Screen.Live) {
+                        push(Route(Screen.Live))
+                    }
+                    MenuItem("Pre-Match", Icons.Filled.Schedule, PreMatchColors[0], current.screen == Screen.PreMatch) {
+                        push(Route(Screen.PreMatch))
+                    }
+                    MenuItem("Results", Icons.Filled.EmojiEvents, GoldColors[0], current.screen == Screen.Results) {
+                        push(Route(Screen.Results))
+                    }
+                    MenuItem(
+                        "Strategy", Icons.Filled.Lightbulb, StrategyColors[0],
+                        current.screen == Screen.Strategy || current.screen == Screen.StrategyPost
+                    ) { push(Route(Screen.Strategy)) }
+                    MenuItem(
+                        "Track Payout", Icons.Filled.AttachMoney, GoldColors[0],
+                        current.screen == Screen.Targets || current.screen == Screen.Detail
+                    ) { push(Route(Screen.Targets)) }
+                    MenuItem(
+                        "Summary", Icons.Filled.BarChart, SummaryColors[0],
+                        current.screen == Screen.Summary || current.screen == Screen.SummaryDetail,
+                        indent = true
+                    ) { push(Route(Screen.Summary)) }
+                    MenuItem(
+                        "Brief Report", Icons.Filled.Description, ReportColors[0],
+                        current.screen == Screen.Report || current.screen == Screen.ReportDetail,
+                        indent = true
+                    ) { push(Route(Screen.Report)) }
+                    if (me != null && !isAdmin) {
                         MenuItem("Subscribe", Icons.Filled.Payments, Green, current.screen == Screen.Subscribe) {
                             push(Route(Screen.Subscribe))
                         }
                     }
-                }
-                if (isAdmin) {
-                    MenuItem(
-                        "Admin Panel", Icons.Filled.AdminPanelSettings, Green,
-                        current.screen == Screen.Admin || current.screen == Screen.AdminEvent ||
-                            current.screen == Screen.AdminPost || current.screen == Screen.AdminUsers ||
-                            current.screen == Screen.AdminReports || current.screen == Screen.AdminInbox
-                    ) { push(Route(Screen.Admin)) }
-                }
-                Spacer(Modifier.height(8.dp))
-                Divider(color = LineColor)
-                Spacer(Modifier.height(8.dp))
-                val me = auth.user
-                if (me == null) {
-                    MenuItem("Login / Sign Up", Icons.Filled.Person, Green, current.screen == Screen.Login) {
-                        openLogin()
+                    if (isAdmin) {
+                        MenuItem(
+                            "Admin Panel", Icons.Filled.AdminPanelSettings, Green,
+                            current.screen == Screen.Admin || current.screen == Screen.AdminEvent ||
+                                current.screen == Screen.AdminPost || current.screen == Screen.AdminUsers ||
+                                current.screen == Screen.AdminReports || current.screen == Screen.AdminInbox
+                        ) { push(Route(Screen.Admin)) }
                     }
-                } else {
-                    Text(
-                        me.email,
-                        color = Gray,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 4.dp)
-                    )
-                    MenuItem("Log Out", Icons.Filled.PowerSettingsNew, Red, false) {
+                    Spacer(Modifier.height(8.dp))
+                    Divider(color = LineColor)
+                    Spacer(Modifier.height(8.dp))
+                    MenuItem("Messages", Icons.Filled.Email, Green, current.screen == Screen.Mailbox) {
+                        if (me == null) openLogin() else push(Route(Screen.Mailbox))
+                    }
+                    MenuItem("Telegram", Icons.AutoMirrored.Filled.Send, MessageColors[0], false) {
+                        openLink(LINK_TELEGRAM)
+                    }
+                    MenuItem("Contact Us", Icons.Filled.SupportAgent, UpdateColors[0], current.screen == Screen.Contact) {
                         closeDrawer()
-                        auth.logout()
+                        openContact()
                     }
+                    MenuItem("Exit App", Icons.AutoMirrored.Filled.ExitToApp, Red, false) { onExit() }
+                    Spacer(Modifier.height(16.dp))
                 }
-                MenuItem("Exit App", Icons.AutoMirrored.Filled.ExitToApp, Red, false) { onExit() }
             }
         }
     ) {
@@ -333,6 +371,9 @@ fun AppRoot(onExit: () -> Unit) {
                 onStrategy = { push(Route(Screen.Strategy)) },
                 onStrategyPost = { id -> push(Route(Screen.StrategyPost, docId = id)) },
                 onAdmin = { push(Route(Screen.Admin)) },
+                onProfile = { if (auth.user == null) openLogin() else showProfile = true },
+                welcome = auth.welcome,
+                onWelcomeDone = { auth.welcome = false },
                 onTrack = { push(Route(Screen.Targets)) },
                 onSummary = { push(Route(Screen.Summary)) },
                 onReport = { push(Route(Screen.Report)) },
@@ -631,6 +672,19 @@ fun AppRoot(onExit: () -> Unit) {
             push(Route(Screen.Subscribe))
         }
     )
+
+    val profileUser = auth.user
+    if (showProfile && profileUser != null) {
+        ProfileDialog(
+            user = profileUser,
+            access = access,
+            onLogout = {
+                showProfile = false
+                auth.logout()
+            },
+            onDismiss = { showProfile = false }
+        )
+    }
 
     val notice = auth.notice
     if (notice != null) {

@@ -93,7 +93,7 @@ private fun Panel(modifier: Modifier = Modifier, content: @Composable () -> Unit
 fun MailButton(unread: Int, onClick: () -> Unit) {
     IconButton(onClick = onClick) {
         BadgedBox(badge = { if (unread > 0) Badge { Text(unread.toString()) } }) {
-            Icon(Icons.Filled.Email, contentDescription = "Mailbox", tint = White)
+            Icon(Icons.Filled.Email, contentDescription = "Messages", tint = White)
         }
     }
 }
@@ -123,12 +123,12 @@ fun MailboxScreen(account: AccountRepo, onBack: () -> Unit, onMenu: () -> Unit) 
         )
     }).sortedByDescending { it.time }
 
-    // Opening the mailbox counts as reading everything in it
+    // Opening Messages counts as reading everything in it
     val newest = account.messages.maxOfOrNull { it.createdAt } ?: 0L
     LaunchedEffect(newest) { account.markSeen(newest) }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        AppTopBar("Mailbox", onBack, onMenu)
+        AppTopBar("Messages", onBack, onMenu)
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -220,7 +220,7 @@ fun ContactScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Send a message to the admin. The reply arrives in your Mailbox.", color = Gray, fontSize = 13.sp)
+            Text("Send a message to the admin. The reply arrives in your Messages.", color = Gray, fontSize = 13.sp)
             TextBox("Subject", subject, { subject = it.take(80) })
             TextBox("Message", body, { body = it.take(2000) }, singleLine = false)
             Button(
@@ -530,7 +530,7 @@ fun PayReportScreen(
             if (already) {
                 Panel {
                     Text("Waiting for admin response", color = UnsettledColor, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Text("Your report was sent. The answer arrives in your Mailbox.", color = White, fontSize = 14.sp)
+                    Text("Your report was sent. The answer arrives in your Messages.", color = White, fontSize = 14.sp)
                 }
             } else {
                 Text("Payment method", color = Gray, fontSize = 12.sp)

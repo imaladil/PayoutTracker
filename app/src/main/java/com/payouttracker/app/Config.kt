@@ -7,3 +7,5 @@ package com.payouttracker.app
 const val ADMIN_EMAIL = "imabdullahaladil1998@gmail.com"
 
 const val LINK_TELEGRAM = "https://t.me/austinaries24"
+
+fun isAdminEmail(email: String): Boolean = email.equals(ADMIN_EMAIL, ignoreCase = true)

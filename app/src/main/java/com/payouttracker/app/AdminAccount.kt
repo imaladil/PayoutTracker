@@ -85,6 +85,7 @@ private fun PlanChips(selected: String, onSelect: (String) -> Unit) {
 private fun statusOf(u: UserRow, now: Long): Pair<String, Color> {
     val paid = maxOf(u.paidUntil, u.bonusUntil)
     return when {
+        isAdminEmail(u.email) -> "ADMIN" to Green
         u.terminated -> "TERMINATED" to Red
         paid >= now -> ("PREMIUM until " + dateOnly(paid)) to Green
         trialEnd(u.createdAt) >= now -> ("TRIAL until " + dateOnly(trialEnd(u.createdAt))) to UnsettledColor
@@ -112,7 +113,8 @@ fun AdminUsersScreen(account: AccountRepo, onBack: () -> Unit, onMenu: () -> Uni
         q.isEmpty() || u.email.lowercase().contains(q) || u.name.lowercase().contains(q) ||
             account.payments.any { p -> p.uid == u.uid && p.trxId.lowercase().contains(q) }
     }
-    val chosen = account.users.filter { it.uid in selected }
+    val selectable = list.filter { !isAdminEmail(it.email) }
+    val chosen = account.users.filter { it.uid in selected && !isAdminEmail(it.email) }
 
     fun done(ok: Boolean) {
         ctx.say(if (ok) "Done" else "Could not save. Check your internet connection.")
@@ -158,9 +160,9 @@ fun AdminUsersScreen(account: AccountRepo, onBack: () -> Unit, onMenu: () -> Uni
                 AdminPanelBox {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(
-                            checked = list.isNotEmpty() && list.all { it.uid in selected },
+                            checked = selectable.isNotEmpty() && selectable.all { it.uid in selected },
                             onCheckedChange = { on ->
-                                selected = if (on) selected + list.map { it.uid } else selected - list.map { it.uid }.toSet()
+                                selected = if (on) selected + selectable.map { it.uid } else selected - selectable.map { it.uid }.toSet()
                             },
                             colors = CheckboxDefaults.colors(checkedColor = Green)
                         )
@@ -186,11 +188,15 @@ fun AdminUsersScreen(account: AccountRepo, onBack: () -> Unit, onMenu: () -> Uni
                 val st = statusOf(u, now)
                 AdminPanelBox {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = u.uid in selected,
-                            onCheckedChange = { on -> selected = if (on) selected + u.uid else selected - u.uid },
-                            colors = CheckboxDefaults.colors(checkedColor = Green)
-                        )
+                        if (isAdminEmail(u.email)) {
+                            Spacer(Modifier.width(48.dp))
+                        } else {
+                            Checkbox(
+                                checked = u.uid in selected,
+                                onCheckedChange = { on -> selected = if (on) selected + u.uid else selected - u.uid },
+                                colors = CheckboxDefaults.colors(checkedColor = Green)
+                            )
+                        }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(u.name.ifBlank { u.email }, color = White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             Text(u.email, color = Gray, fontSize = 12.sp)
@@ -198,7 +204,9 @@ fun AdminUsersScreen(account: AccountRepo, onBack: () -> Unit, onMenu: () -> Uni
                             Text(st.first, color = st.second, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isAdminEmail(u.email)) {
+                        Text("Admin account", color = Gray, fontSize = 12.sp, modifier = Modifier.padding(vertical = 6.dp))
+                    } else Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             "Spent: " + u.totalPaid + " BDT  >",
                             color = Green, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,

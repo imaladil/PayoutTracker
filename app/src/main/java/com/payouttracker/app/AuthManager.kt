@@ -13,7 +13,7 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
@@ -71,6 +71,9 @@ class AuthManager(private val ctx: Context, private val scope: CoroutineScope) {
     /** Error shown on the login page. */
     var error by mutableStateOf<String?>(null)
 
+    /** True for a few seconds after a fresh sign-in; the home screen shows a welcome strip. */
+    var welcome by mutableStateOf(false)
+
     /** One-time notice shown in a dialog, for example "signed in on another device". */
     var notice by mutableStateOf<String?>(null)
 
@@ -111,6 +114,7 @@ class AuthManager(private val ctx: Context, private val scope: CoroutineScope) {
         prefs.edit().remove("session").apply()
         if (firebaseReady) FirebaseAuth.getInstance().signOut()
         user = null
+        welcome = false
         profile = Profile()
         scope.launch {
             try {
@@ -140,10 +144,9 @@ class AuthManager(private val ctx: Context, private val scope: CoroutineScope) {
         busy = true
         scope.launch {
             try {
-                val option = GetGoogleIdOption.Builder()
-                    .setFilterByAuthorizedAccounts(false)
-                    .setServerClientId(ctx.getString(resId))
-                    .build()
+                // The "Sign in with Google" flow always shows the account picker (with "add account"),
+                // for new and returning people alike.
+                val option = GetSignInWithGoogleOption.Builder(ctx.getString(resId)).build()
                 val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
                 val result = CredentialManager.create(activity).getCredential(activity, request)
                 val cred = result.credential
@@ -161,6 +164,7 @@ class AuthManager(private val ctx: Context, private val scope: CoroutineScope) {
                 withTimeout(20000) { registerSession(fbUser, session) }
                 prefs.edit().putString("session", session).apply()
                 user = fbUser.toAuthUser()
+                welcome = true
                 watchSession(fbUser.uid, session)
             } catch (e: GetCredentialCancellationException) {
                 // the person closed the account picker
