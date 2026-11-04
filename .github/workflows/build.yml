@@ -67,6 +67,15 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: gradle assembleRelease
 
+      - name: Verify the release APK is signed and intact
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          ls -l "$APK"
+          unzip -tq "$APK"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | grep -E "Verifies|Verified using|SHA-256 digest" 
+          "$BT/aapt2" dump badging "$APK" | head -3
+
       - name: Build plain debug APK (for comparison)
         run: gradle assembleDebug
 
