@@ -609,6 +609,16 @@ class AccountRepo(private val ctx: Context) {
         batch.commit().addOnCompleteListener { onDone(it.isSuccessful) }
     }
 
+    /** Declines a waiting payment (no report needed) and tells the user why. */
+    fun declinePayment(p: Payment, note: String, onDone: (Boolean) -> Unit) {
+        val batch = db.batch()
+        batch.update(db.collection("payments").document(p.id), hashMapOf<String, Any>("status" to "declined"))
+        val text = if (note.isBlank()) "Your payment could not be confirmed." else note.trim()
+        batch.set(db.collection("messages").document(), messageData(p.uid, "Payment declined", text))
+        reports.firstOrNull { it.paymentId == p.id }?.let { batch.delete(db.collection("reports").document(it.id)) }
+        batch.commit().addOnCompleteListener { onDone(it.isSuccessful) }
+    }
+
     /** Responds to a report by terminating the account (the report is removed). */
     fun terminateFromReport(report: PayReport, onDone: (Boolean) -> Unit) {
         val batch = db.batch()

@@ -3,7 +3,6 @@ package com.payouttracker.app
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -14,7 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 
 /**
- * The "Contact Us" dropdown: Message Me and Telegram Group.
+ * The "Contact Us" dropdown: Message Me and Telegram (opens the same Telegram link as the Telegram button).
  * Place it inside the same Box as the button that opens it, so it drops down from that button.
  */
 @Composable
@@ -40,9 +39,9 @@ fun ContactMenu(
             }
         )
         DropdownMenuItem(
-            text = { Text("Telegram Group", color = White, fontWeight = FontWeight.SemiBold) },
+            text = { Text("Telegram", color = White, fontWeight = FontWeight.SemiBold) },
             leadingIcon = {
-                Icon(Icons.Filled.Groups, contentDescription = null, tint = MessageColors[0])
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color(0xFF2AABEE))
             },
             onClick = {
                 onDismiss()

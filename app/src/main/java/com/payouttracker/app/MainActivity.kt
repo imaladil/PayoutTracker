@@ -85,7 +85,7 @@ import kotlinx.coroutines.launch
 // (or all targets combined when targetId is null).
 enum class Screen {
     Home, Login, Live, PreMatch, Results, Strategy, StrategyPost, Admin, AdminEvent, AdminPost,
-    AdminUsers, AdminReports, AdminInbox, Subscribe, PayReport, Contact, Mailbox,
+    AdminUsers, AdminReports, AdminInbox, AdminPayments, Subscribe, PayReport, Contact, Mailbox,
     Targets, Detail, Summary, SummaryDetail, Report, ReportDetail }
 
 /** One place in the app. [targetId] is used by Detail, SummaryDetail and ReportDetail. */
@@ -338,7 +338,8 @@ fun AppRoot(onExit: () -> Unit) {
                             "Admin Panel", Icons.Filled.AdminPanelSettings, Green,
                             current.screen == Screen.Admin || current.screen == Screen.AdminEvent ||
                                 current.screen == Screen.AdminPost || current.screen == Screen.AdminUsers ||
-                                current.screen == Screen.AdminReports || current.screen == Screen.AdminInbox
+                                current.screen == Screen.AdminReports || current.screen == Screen.AdminInbox ||
+                                current.screen == Screen.AdminPayments
                         ) { push(Route(Screen.Admin)) }
                     }
                     Spacer(Modifier.height(8.dp))
@@ -461,6 +462,14 @@ fun AppRoot(onExit: () -> Unit) {
                 }
             }
 
+            Screen.AdminPayments -> if (isAdmin) {
+                AdminPendingPaymentsScreen(account, onBack = { stack.removeAt(stack.lastIndex) }, onMenu = openMenu)
+            } else {
+                LaunchedEffect(current) {
+                    if (stack.size > 1) stack.removeAt(stack.lastIndex)
+                }
+            }
+
             Screen.AdminInbox -> if (isAdmin) {
                 AdminInboxScreen(account, onBack = { stack.removeAt(stack.lastIndex) }, onMenu = openMenu)
             } else {
@@ -485,7 +494,7 @@ fun AppRoot(onExit: () -> Unit) {
                     ContactScreen(
                         account = account,
                         user = me,
-                        onGroup = { openLink(LINK_GROUP) },
+                        onGroup = { openLink(LINK_TELEGRAM) },
                         onBack = { stack.removeAt(stack.lastIndex) },
                         onMenu = openMenu
                     )
@@ -542,6 +551,7 @@ fun AppRoot(onExit: () -> Unit) {
                         onUsers = { push(Route(Screen.AdminUsers)) },
                         onReports = { push(Route(Screen.AdminReports)) },
                         onInbox = { push(Route(Screen.AdminInbox)) },
+                        onPending = { push(Route(Screen.AdminPayments)) },
                         onBack = { stack.removeAt(stack.lastIndex) },
                         onMenu = openMenu,
                         onNewEvent = { push(Route(Screen.AdminEvent, docId = "new")) },
@@ -592,7 +602,7 @@ fun AppRoot(onExit: () -> Unit) {
                         onSummary = { push(Route(Screen.SummaryDetail, target.id)) },
                         onReport = { push(Route(Screen.ReportDetail, target.id)) },
                         onContactMessage = { openContact() },
-                        onContactGroup = { openLink(LINK_GROUP) },
+                        onContactGroup = { openLink(LINK_TELEGRAM) },
                         onNextTarget = {
                             // Switch to the next Payout Target (wraps around to the first one)
                             val list = state.targets
@@ -667,6 +677,7 @@ fun AppRoot(onExit: () -> Unit) {
         onMailboxOpen = current.screen == Screen.Mailbox,
         nudge = nudge,
         onNudgeLater = { nudge = null },
+        onOpenMailbox = { push(Route(Screen.Mailbox)) },
         onSubscribe = {
             nudge = null
             push(Route(Screen.Subscribe))
@@ -712,13 +723,21 @@ private fun AppPopups(
     onMailboxOpen: Boolean,
     nudge: String?,
     onNudgeLater: () -> Unit,
+    onOpenMailbox: () -> Unit,
     onSubscribe: () -> Unit
 ) {
-    // A new message is shown in full; OK closes it and the next unread one appears
+    // "You have one message": Open goes to Messages. Close hides this notice, but the message stays
+    // unread (the mail icon keeps its mark) until it is opened in Messages.
+    var closedUpTo by remember { mutableStateOf(0L) }
     if (auth.user != null && auth.profile.loaded && !access.terminated && !onMailboxOpen) {
-        val next = account.unread(auth.profile.createdAt).firstOrNull()
-        if (next != null) {
-            MessagePopup(next) { account.markSeen(next.createdAt) }
+        val unread = account.unread(auth.profile.createdAt)
+        val newest = unread.maxOfOrNull { it.createdAt } ?: 0L
+        if (unread.isNotEmpty() && newest > closedUpTo) {
+            MessageNotice(
+                count = unread.size,
+                onOpen = onOpenMailbox,
+                onClose = { closedUpTo = newest }
+            )
         }
     }
     if (nudge != null) NudgeDialog(nudge, onSubscribe = onSubscribe, onLater = onNudgeLater)

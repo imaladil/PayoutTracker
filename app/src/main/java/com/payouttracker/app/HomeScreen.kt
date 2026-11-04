@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -186,44 +187,77 @@ private fun TrackHubCard(footer: String, onTrack: () -> Unit, onSummary: () -> U
             .clip(RoundedCornerShape(20.dp))
             .background(Brush.linearGradient(HubColors))
     ) {
-        Icon(
-            Icons.Filled.AttachMoney,
-            contentDescription = null,
-            tint = Color.White.copy(alpha = 0.10f),
+        Row(
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .size(170.dp)
-        )
-        Row(modifier = Modifier.fillMaxSize()) {
-            Column(
+                .fillMaxSize()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Track Payout is its own raised, outlined button with an arrow, so it is clear it can be tapped
+            val trackShape = RoundedCornerShape(16.dp)
+            Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
+                    .clip(trackShape)
+                    .background(Color.White.copy(alpha = 0.20f))
+                    .border(1.5.dp, Color.White.copy(alpha = 0.65f), trackShape)
                     .clickable(onClick = onTrack)
-                    .padding(18.dp),
-                verticalArrangement = Arrangement.SpaceBetween
+                    .padding(12.dp)
             ) {
-                Column {
-                    Box(
-                        modifier = Modifier
-                            .size(54.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.25f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Filled.AttachMoney, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
+                Icon(
+                    Icons.Filled.AttachMoney,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.10f),
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .size(120.dp)
+                )
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.25f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.AttachMoney, contentDescription = null, tint = Color.White, modifier = Modifier.size(26.dp))
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowForward,
+                                    contentDescription = "Open Track Payout",
+                                    tint = HubColors[1],
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Text("Track Payout", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        Text("Record stakes, odds & payouts", color = Color.White.copy(alpha = 0.9f), fontSize = 11.sp)
                     }
-                    Spacer(Modifier.height(14.dp))
-                    Text("Track Payout", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Text("Record stakes, odds & payouts", color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp)
+                    Text(footer, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
-                Text(footer, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
             Column(
                 modifier = Modifier
-                    .width(158.dp)
-                    .fillMaxHeight()
-                    .padding(top = 12.dp, bottom = 12.dp, end = 12.dp),
+                    .width(146.dp)
+                    .fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 HubMini(

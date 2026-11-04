@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Email
@@ -53,6 +55,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.sp
 import java.util.Calendar
 
@@ -62,12 +65,16 @@ fun durationText(ms: Long): String {
 }
 
 @Composable
-private fun TextBox(label: String, value: String, onChange: (String) -> Unit, keyboard: KeyboardType = KeyboardType.Text, singleLine: Boolean = true) {
+private fun TextBox(
+    label: String, value: String, onChange: (String) -> Unit,
+    keyboard: KeyboardType = KeyboardType.Text, singleLine: Boolean = true, minLines: Int = 1
+) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
         singleLine = singleLine,
+        minLines = if (singleLine) 1 else minLines,
         keyboardOptions = KeyboardOptions(keyboardType = keyboard),
         colors = fieldColors(),
         modifier = Modifier.fillMaxWidth()
@@ -156,11 +163,20 @@ fun MailboxScreen(account: AccountRepo, onBack: () -> Unit, onMenu: () -> Unit) 
     if (o != null) {
         AlertDialog(
             onDismissRequest = { open = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+            modifier = Modifier.padding(horizontal = 14.dp),
             containerColor = Color(0xFF111111),
             titleContentColor = White,
             textContentColor = White,
-            title = { Text(o.title, fontWeight = FontWeight.Bold) },
-            text = { Column(modifier = Modifier.verticalScroll(rememberScrollState())) { Text(o.detail) } },
+            title = { Text(o.title, fontWeight = FontWeight.Bold, fontSize = 20.sp) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 220.dp, max = 520.dp)
+                        .verticalScroll(rememberScrollState())
+                ) { Text(o.detail, fontSize = 16.sp, lineHeight = 24.sp) }
+            },
             confirmButton = { TextButton(onClick = { open = null }) { Text("OK", color = Green, fontWeight = FontWeight.Bold) } }
         )
     }
@@ -177,6 +193,27 @@ fun MessagePopup(m: InboxMessage, onOk: () -> Unit) {
         title = { Text(m.title, fontWeight = FontWeight.Bold) },
         text = { Column(modifier = Modifier.verticalScroll(rememberScrollState())) { Text(m.body) } },
         confirmButton = { TextButton(onClick = onOk) { Text("OK", color = Green, fontWeight = FontWeight.Bold) } }
+    )
+}
+
+/** "You have one message": Open goes to Messages, Close only hides this notice (the message stays unread). */
+@Composable
+fun MessageNotice(count: Int, onOpen: () -> Unit, onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = {},
+        containerColor = Color(0xFF111111),
+        titleContentColor = White,
+        textContentColor = White,
+        icon = { Icon(Icons.Filled.Email, contentDescription = null, tint = Green) },
+        title = {
+            Text(
+                if (count == 1) "You have one message" else "You have $count messages",
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = { Text("Open it now, or close this and read it later from the mail icon.") },
+        confirmButton = { TextButton(onClick = onOpen) { Text("Open", color = Green, fontWeight = FontWeight.Bold) } },
+        dismissButton = { TextButton(onClick = onClose) { Text("Close", color = White) } }
     )
 }
 
@@ -222,7 +259,7 @@ fun ContactScreen(
         ) {
             Text("Send a message to the admin. The reply arrives in your Messages.", color = Gray, fontSize = 13.sp)
             TextBox("Subject", subject, { subject = it.take(80) })
-            TextBox("Message", body, { body = it.take(2000) }, singleLine = false)
+            TextBox("Message", body, { body = it.take(2000) }, singleLine = false, minLines = 9)
             Button(
                 onClick = {
                     if (subject.isBlank() || body.isBlank()) {
@@ -247,7 +284,17 @@ fun ContactScreen(
                     .fillMaxWidth()
                     .height(50.dp)
             ) { Text(if (busy) "Sending..." else "Send", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
-            TextButton(onClick = onGroup) { Text("Join the Telegram group", color = MessageColors[0]) }
+            Button(
+                onClick = onGroup,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2AABEE), contentColor = White),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Message on Telegram", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
         }
     }
 }

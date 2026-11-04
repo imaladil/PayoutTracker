@@ -112,6 +112,7 @@ fun AdminScreen(
     onUsers: () -> Unit,
     onReports: () -> Unit,
     onInbox: () -> Unit,
+    onPending: () -> Unit,
     onBack: () -> Unit,
     onMenu: () -> Unit,
     onNewEvent: () -> Unit,
@@ -147,6 +148,17 @@ fun AdminScreen(
                         modifier = Modifier.weight(1f)
                     ) { Text("New Strategy", fontWeight = FontWeight.Bold) }
                 }
+            }
+            item {
+                val waiting = account.payments.count { it.status == "pending" }
+                Button(
+                    onClick = onPending,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (waiting > 0) UnsettledColor else PanelBg,
+                        contentColor = if (waiting > 0) Black else White
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Pending payments (" + waiting + ")", fontWeight = FontWeight.Bold) }
             }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

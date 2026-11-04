@@ -274,6 +274,118 @@ fun AdminUsersScreen(account: AccountRepo, onBack: () -> Unit, onMenu: () -> Uni
 }
 
 // ---------------------------------------------------------------------------------------------
+// Pending payments: Transaction IDs that users submitted and that wait for approval (oldest first)
+// ---------------------------------------------------------------------------------------------
+
+@Composable
+fun AdminPendingPaymentsScreen(account: AccountRepo, onBack: () -> Unit, onMenu: () -> Unit) {
+    val ctx = LocalContext.current
+    var approveFor by remember { mutableStateOf<Payment?>(null) }
+    var declineFor by remember { mutableStateOf<Payment?>(null) }
+    var note by remember { mutableStateOf("") }
+    val list = account.payments.filter { it.status == "pending" }.sortedBy { it.submittedAt.takeIf { t -> t > 0 } ?: it.createdAt }
+
+    fun done(ok: Boolean) {
+        ctx.say(if (ok) "Done" else "Could not save. Check your internet connection.")
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        AppTopBar("Pending payments", onBack, onMenu)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                Text(
+                    if (list.isEmpty()) "No payments are waiting." else list.size.toString() + " waiting, oldest first.",
+                    color = Gray, fontSize = 13.sp
+                )
+            }
+            items(list, key = { it.id }) { p ->
+                val m = methodOf(p.method)
+                val plan = planOf(p.plan)
+                AdminPanelBox {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            dateTimeText(if (p.submittedAt > 0) p.submittedAt else p.createdAt),
+                            color = Gray, fontSize = 11.sp, modifier = Modifier.weight(1f)
+                        )
+                        Text(m.label, color = m.color, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                    Text(p.name.ifBlank { p.email }, color = White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(p.email, color = Gray, fontSize = 12.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text(p.amount.toString() + " BDT  •  " + plan.label, color = Green, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Transaction ID: " + p.trxId, color = White, fontSize = 13.sp)
+                    Text("Sent from: " + p.sender, color = Gray, fontSize = 12.sp)
+                    if (p.amount != plan.price) {
+                        Text("The amount does not match the plan price (" + plan.price + " BDT).", color = UnsettledColor, fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { approveFor = p },
+                            colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Black),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Approve", fontWeight = FontWeight.Bold) }
+                        OutlinedButton(
+                            onClick = {
+                                note = ""
+                                declineFor = p
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Decline", color = Red, fontWeight = FontWeight.Bold) }
+                    }
+                }
+            }
+        }
+    }
+
+    val a = approveFor
+    if (a != null) {
+        AlertDialog(
+            onDismissRequest = { approveFor = null },
+            containerColor = Color(0xFF111111),
+            titleContentColor = White,
+            textContentColor = White,
+            title = { Text("Approve this payment?") },
+            text = {
+                Text(
+                    (a.name.ifBlank { a.email }) + "\n" + a.amount + " BDT  •  " + planOf(a.plan).label +
+                        "\nID " + a.trxId + "\nThe subscription starts right away."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    account.activate(a, a.plan, account.reports.firstOrNull { it.paymentId == a.id }, ::done)
+                    approveFor = null
+                }) { Text("Approve", color = Green, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { approveFor = null }) { Text("Cancel", color = White) } }
+        )
+    }
+    val d = declineFor
+    if (d != null) {
+        AlertDialog(
+            onDismissRequest = { declineFor = null },
+            containerColor = Color(0xFF111111),
+            titleContentColor = White,
+            textContentColor = White,
+            title = { Text("Decline payment") },
+            text = { AdminField("Message to the user", note, { note = it.take(500) }, singleLine = false) },
+            confirmButton = {
+                TextButton(onClick = {
+                    account.declinePayment(d, note, ::done)
+                    declineFor = null
+                }) { Text("Decline", color = Red, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { declineFor = null }) { Text("Cancel", color = White) } }
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Payment reports (oldest first)
 // ---------------------------------------------------------------------------------------------
 
