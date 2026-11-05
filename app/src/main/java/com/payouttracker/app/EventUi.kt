@@ -276,6 +276,7 @@ fun EventCard(
 }
 
 /** A settled bet in the history list. The unique bet ID sits in the top-right corner (tap to copy). */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ResultRow(e: BetEvent) {
     val won = e.status == "won"
@@ -289,17 +290,26 @@ fun ResultRow(e: BetEvent) {
             .padding(12.dp)
     ) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            BetTypeTag(e.isMulti)
-            Spacer(Modifier.width(8.dp))
-            if (!e.isMulti) {
-                Icon(sportIcon(e.sport), contentDescription = null, tint = Gray, modifier = Modifier.size(15.dp))
-                Spacer(Modifier.width(5.dp))
+            // Tag, sport and tournament flow together; a tournament that does not fit moves to the next line whole
+            FlowRow(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                BetTypeTag(e.isMulti)
+                if (!e.isMulti) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(sportIcon(e.sport), contentDescription = null, tint = Gray, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text(e.sport, color = Gray, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                    }
+                    if (e.tournament.isNotBlank()) {
+                        Text(e.tournament, color = Gray, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                } else {
+                    Text("" + e.legs.size + " events", color = Gray, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
-            Text(
-                if (e.isMulti) "" + e.legs.size + " events" else e.sport + (if (e.tournament.isBlank()) "" else "  •  " + e.tournament),
-                color = Gray, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f)
-            )
             Spacer(Modifier.width(8.dp))
             Text(
                 "ID: " + e.displayId,

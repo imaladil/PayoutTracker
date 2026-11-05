@@ -170,7 +170,7 @@ private fun HubMini(
 }
 
 // Same flat two-colour gradient style as the Live card, in its own colour (ocean blue)
-private val HubColors = listOf(Color(0xFF06B6D4), Color(0xFF155E75))
+private val HubColors = listOf(Color(0xFFEF4444), Color(0xFF991B1B))
 private val HubSummaryTint = Color(0xFFFFD54F)
 private val HubReportTint = Color(0xFFE1BEE7)
 
